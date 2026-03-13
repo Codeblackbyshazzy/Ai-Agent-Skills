@@ -31,6 +31,8 @@ I started this project on December 17, 2025, when skills were spreading across r
 
 I built it as a cross-agent installer, and that part is still useful.
 
+For context, this repo went live before `skills.sh`. The `vercel-labs/skills` repo was created on January 14, 2026 and went on to become the default choice for a lot of people in the space.
+
 Now I use it as a library. It holds the skills I actually use, adapt, or recommend. Some are mine. Some come from other open-source repos. If something feels weak, repetitive, or too niche, I leave it out.
 
 I am not chasing every new coding agent either. I care about the major ones people actually use. I would rather support a smaller set well than add every new logo that shows up.
