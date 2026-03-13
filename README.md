@@ -27,13 +27,13 @@
 
 ## Why I Keep This Repo
 
-I started this project on December 17, 2025, when skills were spreading across repos and every agent had its own install location.
+I launched this on December 17, 2025, the day after Agent Skills became an open standard, and before `skills.sh` launched on January 14, 2026.
 
-I built it as a cross-agent installer, and that part is still useful.
+I built this as a universal installer. That part still works, but it is not the main reason I keep this repo anymore.
 
-For context, this repo went live before `skills.sh`. The `vercel-labs/skills` repo was created on January 14, 2026 and went on to become the default choice for a lot of people in the space.
+If you just want the default universal installer, `skills.sh` is the obvious choice now.
 
-Now I use it as a library. It holds the skills I actually use, adapt, or recommend. Some are mine. Some come from other open-source repos. If something feels weak, repetitive, or too niche, I leave it out.
+What I care about here now is the library itself. It holds the skills I actually use, adapt, or recommend. Some are mine. Some come from other open-source repos. If something feels weak, repetitive, or too niche, I leave it out.
 
 I am not chasing every new coding agent either. I care about the major ones people actually use. I would rather support a smaller set well than add every new logo that shows up.
 
