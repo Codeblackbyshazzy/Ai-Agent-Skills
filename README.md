@@ -102,14 +102,6 @@ This is still my library, but the upstream lineage stays visible on purpose.
 | [ComposioHQ/awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills) | Broad practical coverage for workflow, files, research, and creative tasks. | 15 skills |
 | [MoizIbnYousaf/Ai-Agent-Skills](https://github.com/MoizIbnYousaf/Ai-Agent-Skills) | The skills I write and maintain directly. | 5 skills |
 
-## What I Support
-
-I keep support focused on the bigger agents.
-
-I am not interested in racing to add support for every new coding agent that launches. If I do not use it, trust it, or expect it to last, I am probably not going to add first-class support for it.
-
-That keeps the repo focused instead of turning into compatibility theater.
-
 ## Supported Agents
 
 | Agent | Flag | Install Location |
