@@ -61,6 +61,7 @@ By default, `install` targets the major agents I already support: Claude Code, C
 
 - `Collections` are the first place I would tell someone to browse.
 - `My Picks` is where I would tell most people to start.
+- A few skills are authored here. Most are curated from upstream repos and kept clearly attributed.
 - `Source` stays attached to every skill. The library matters, but so does provenance.
 - `Featured` means I would actively point someone to that skill first.
 - `Verified` means I have personally checked the skill and its metadata.
@@ -72,13 +73,13 @@ The folder layout stays flat under `skills/<name>/` because installs stay simple
 
 Start here. They are the front shelf, not the whole catalog.
 
-| Collection | What it's for | Start with |
-|-------|-------------|-------------|
-| `my-picks` | The first skills I would install on a fresh setup | `frontend-design`, `mcp-builder`, `qa-regression` |
-| `build-apps` | Web product work with a high interface bar | `frontend-design`, `artifacts-builder`, `theme-factory` |
-| `build-systems` | Backend, architecture, MCP, and deeper engineering work | `mcp-builder`, `backend-development`, `database-design` |
-| `test-and-debug` | Review, QA, debugging, and cleanup work | `qa-regression`, `code-review`, `webapp-testing` |
-| `docs-and-research` | Docs, files, research, and execution support | `pdf`, `doc-coauthoring`, `code-documentation` |
+| Collection | What it's for | Start with | Main sources |
+|-------|-------------|-------------|--------------|
+| `my-picks` | The first skills I would install on a fresh setup | `frontend-design`, `mcp-builder`, `qa-regression` | Anthropic, Moiz |
+| `build-apps` | Web product work with a high interface bar | `frontend-design`, `artifacts-builder`, `theme-factory` | Anthropic, Composio |
+| `build-systems` | Backend, architecture, MCP, and deeper engineering work | `mcp-builder`, `backend-development`, `database-design` | wshobson, Anthropic |
+| `test-and-debug` | Review, QA, debugging, and cleanup work | `qa-regression`, `code-review`, `webapp-testing` | Moiz, Anthropic |
+| `docs-and-research` | Docs, files, research, and execution support | `pdf`, `doc-coauthoring`, `code-documentation` | Anthropic, Composio |
 
 CLI shortcuts:
 
@@ -88,6 +89,18 @@ npx ai-agent-skills list --collection my-picks
 npx ai-agent-skills list --collection build-apps
 npx ai-agent-skills search expo
 ```
+
+## Source Repos
+
+This is still my library, but the upstream lineage stays visible on purpose.
+
+| Source repo | Why it's here | In this library |
+|------------|----------------|-----------------|
+| [Anthropic Skills](https://github.com/anthropics/skills) | The strongest general-purpose skill set in the ecosystem, especially for frontend, docs, and workflow. | 13 skills |
+| [Anthropic Claude Code](https://github.com/anthropics/claude-code) | Extra Claude Code workflow coverage that belongs here when it clears the bar. | 1 skill |
+| [wshobson/agents](https://github.com/wshobson/agents) | Strong backend, systems, and architecture coverage. | 7 skills |
+| [ComposioHQ/awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills) | Broad practical coverage for workflow, files, research, and creative tasks. | 15 skills |
+| [MoizIbnYousaf/Ai-Agent-Skills](https://github.com/MoizIbnYousaf/Ai-Agent-Skills) | The skills I write and maintain directly. | 5 skills |
 
 ## What I Support
 
@@ -187,9 +200,9 @@ All major coding agents support some variation of this pattern.
 This library builds on work from the open-source community, especially:
 
 - [Anthropic Skills](https://github.com/anthropics/skills)
+- [Anthropic Claude Code](https://github.com/anthropics/claude-code)
 - [ComposioHQ Awesome Claude Skills](https://github.com/ComposioHQ/awesome-claude-skills)
 - [wshobson/agents](https://github.com/wshobson/agents)
-- [openskills](https://github.com/numman-ali/openskills)
 
 If something here traces back to your work and you want clearer attribution, open an issue.
 
