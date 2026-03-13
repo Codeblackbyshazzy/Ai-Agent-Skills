@@ -3,6 +3,7 @@
 This repo is my keep pile.
 
 I am not trying to mirror every agent skill on the internet. I want a strong set of skills that I would actually keep on a machine, recommend to other developers, and keep improving over time.
+Most of those skills come from other repos, so curation here is as much about provenance and trust as it is about the skill text itself.
 
 ## What I Care About
 
@@ -31,7 +32,7 @@ I keep the folder structure simple and let the catalog do the sorting.
 - `skills/` holds the actual skill folders
 - `skills.json` is the catalog the CLI reads
 - `collections` are the front shelf
-- `category`, `tags`, `featured`, and `verified` help with sorting and trust
+- `category`, `tags`, `source`, `origin`, `featured`, `verified`, and `trust` help with sorting and trust
 
 I do not want a deep folder tree. That usually makes install tooling worse and the repo harder to maintain.
 
@@ -53,6 +54,12 @@ Not every skill needs a collection. If something is useful but off to the side, 
 - `verified: true` means I have personally checked it and I am comfortable signaling more trust
 
 I want those markers to mean something. They should stay a little hard to earn.
+
+## Trust Levels
+
+- `listed` means the skill belongs in the library, but I am not signaling much beyond that yet
+- `reviewed` means I have put a little more editorial weight behind it
+- `verified` means I have personally checked it and I am comfortable standing behind it more directly
 
 ## Agent Support
 
@@ -78,9 +85,9 @@ When I add or update a skill, I try to answer these questions:
 
 The repo already has the shape for that.
 
-- home page: `my-picks`
-- browse page: collections first, tags and search second
+- home page: library first, with work areas and source repos both visible
+- browse page: collections, tags, source repos, and search
 - skill page: source, tags, collections when relevant, install command
-- trust layer: featured and verified
+- trust layer: featured, verified, and catalog trust state
 
 The repo should stay where the data lives. A site can just present it better.

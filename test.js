@@ -65,12 +65,21 @@ test('skills.json exists and is valid JSON', () => {
 
 test('skills.json has skills with required fields', () => {
   const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'skills.json'), 'utf8'));
-  const required = ['name', 'description', 'category', 'author', 'license'];
+  const required = ['name', 'description', 'category', 'author', 'license', 'source', 'origin', 'trust'];
 
   data.skills.forEach(skill => {
     required.forEach(field => {
       assert(skill[field], `Skill ${skill.name} missing ${field}`);
     });
+  });
+});
+
+test('skills.json does not carry stale popularity metrics', () => {
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'skills.json'), 'utf8'));
+
+  data.skills.forEach(skill => {
+    assert(!('stars' in skill), `Skill ${skill.name} should not include stars`);
+    assert(!('downloads' in skill), `Skill ${skill.name} should not include downloads`);
   });
 });
 
@@ -153,6 +162,8 @@ test('info command works', () => {
   const output = run('info pdf');
   assertContains(output, 'pdf');
   assertContains(output, 'Category:');
+  assertContains(output, 'Trust:');
+  assertContains(output, 'Source Repo:');
   assertContains(output, 'Collections:');
 });
 

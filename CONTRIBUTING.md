@@ -3,6 +3,7 @@
 This repo is curated on purpose.
 
 I am not trying to build the biggest skill library on GitHub. I want a smaller, sharper library of skills that are actually worth installing.
+Most of the library is sourced from other repos, so attribution and provenance matter as much as the skill itself.
 
 Before you open a PR, read [CURATION.md](./CURATION.md).
 
@@ -31,9 +32,11 @@ If your skill is fine but does not really add much to the library, I would rathe
 1. Fork the repo.
 2. Add the skill folder at `skills/<skill-name>/`.
 3. Add or update the `skills.json` entry.
-4. Put the skill in a collection only if it clearly belongs on one of the main shelves.
-5. Run `node test.js`.
-6. Open a PR with a short explanation of why it belongs.
+4. Keep the source repo and attribution clean.
+5. Set the right trust level. Most additions should start as `listed`.
+6. Put the skill in a collection only if it clearly belongs on one of the main shelves.
+7. Run `node test.js`.
+8. Open a PR with a short explanation of why it belongs.
 
 ## Categories
 
@@ -64,6 +67,7 @@ I review submissions for:
 - usefulness
 - clarity
 - overlap with existing skills
+- source quality and provenance
 - attribution and licensing
 - overall fit with the repo
 

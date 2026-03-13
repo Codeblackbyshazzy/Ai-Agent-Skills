@@ -2,130 +2,196 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.8.0] - 2025-01-13
-
-### Added
-- **Gemini CLI support**: New `--agent gemini` flag installs to `~/.gemini/skills/`
-- Google's Gemini CLI added to default multi-agent install
+## Unreleased
 
 ### Changed
-- Now supports 11 agents (was 10)
-- Updated README with Gemini CLI documentation
-- Updated package description and keywords
+- Removed six low-signal pointer skills from the catalog and kept the stronger sourced skills.
+- Dropped static per-skill `stars` and `downloads` fields from `skills.json`.
+- Added `origin` and `trust` metadata to catalog entries for clearer provenance.
+- Synced repo metadata around version `1.9.2`.
 
-## [1.1.0] - 2024-12-20
+## [1.9.2] - 2026-01-23
 
 ### Added
-- **Dry-run mode**: Preview installations with `--dry-run` flag
-- **Config file support**: `~/.agent-skills.json` for default settings
-- **Update notifications**: See available updates when listing installed skills
-- **Update all**: `update --all` to update all installed skills at once
-- **Category filter**: `list --category development` to filter skills
-- **Tag support**: Search now includes tags
-- **"Did you mean" suggestions**: Typo-tolerant skill name matching
-- **Config command**: `config --default-agent cursor` to set defaults
-- **Security validation**: Block path traversal attacks in skill names
-- **Size limit**: 50MB max skill size to prevent abuse
-- **Proper error handling**: Graceful failures with helpful messages
-- **Test suite**: `npm test` runs validation tests
-- **Enhanced CI**: Schema validation, duplicate detection, frontmatter checks
+- `best-practices` skill to the registry.
 
-### Changed
-- Bump to version 1.1.0 (semver: new features)
-- Node.js 14+ now required (was implicit, now explicit)
-- CLI shows skill size on install
-- Better help output with categories section
+## [1.9.1] - 2026-01-17
 
 ### Fixed
-- JSON parsing errors now show helpful messages instead of crashing
-- File operation errors properly caught and reported
-- Partial installs cleaned up on failure
+- Hardened git URL installs with validation, safer temp directories, and cleaner metadata handling.
+- Added support for `ssh://` git URLs and corrected bin script paths.
+
+## [1.9.0] - 2026-01-16
+
+### Added
+- Imported Vercel and Expo skills.
+- Added framework tags for filtering.
+
+### Fixed
+- Added missing `SKILL.md` files for the imported Vercel and Expo entries.
+
+## [1.8.0] - 2026-01-12
+
+### Added
+- Gemini CLI support with `--agent gemini` and install path `~/.gemini/skills/`.
+
+### Changed
+- Support expanded to 11 major agents.
+- Updated README and package metadata for Gemini CLI support.
+
+## [1.7.0] - 2026-01-04
+
+### Fixed
+- Improved metadata handling for sourced skills.
+- Corrected the OpenCode path and related install messaging.
+
+## [1.6.2] - 2026-01-01
+
+### Changed
+- Aligned help text and README copy with all-agent installs as the default behavior.
+
+## [1.6.1] - 2026-01-01
+
+### Added
+- `ask-questions-if-underspecified` skill.
+
+### Changed
+- `install` now targets all supported agents by default.
+
+## [1.6.0] - 2025-12-26
+
+### Added
+- Multi-agent operations with repeated or comma-separated `--agent` flags.
+
+## [1.2.3] - 2025-12-26
+
+### Fixed
+- Corrected the OpenCode path from `skills` to `skill`.
+- Removed the private `xreply` skill and cleaned related help text.
+
+## [1.2.2] - 2025-12-25
+
+### Fixed
+- Added Windows path support.
+- Hardened install and publish behavior before npm release.
+
+## [1.2.1] - 2025-12-25
+
+### Fixed
+- Allowed installs where the repo root itself is the skill.
+
+## [1.2.0] - 2025-12-20
+
+### Added
+- Interactive `browse` command.
+- Install support from GitHub repos and local paths.
+
+## [1.1.1] - 2025-12-20
+
+### Added
+- `doc-coauthoring` skill from Anthropic.
+
+## [1.1.0] - 2025-12-20
+
+### Added
+- `--dry-run` mode to preview installs.
+- Config file support through `~/.agent-skills.json`.
+- Update notifications and `update --all`.
+- Category filtering, tag search, and typo suggestions.
+- `config` command and expanded validation tests.
+
+### Changed
+- Node.js 14+ became an explicit requirement.
+- CLI output improved around skill size and help text.
+
+### Fixed
+- Better JSON and file-operation error handling.
+- Partial installs are now cleaned up on failure.
 
 ### Security
-- Skill names validated against path traversal patterns (`../`, `\`)
-- Max file size enforced during copy operations
+- Blocked path traversal patterns in skill names.
+- Enforced a 50 MB skill size limit during copy operations.
 
-## [1.0.8] - 2024-12-20
+## [1.0.8] - 2025-12-20
 
 ### Added
-- `uninstall` command to remove installed skills
-- `update` command to update skills to latest version
-- `list --installed` flag to show installed skills per agent
-- Letta agent support (`--agent letta`)
-- Command aliases: `add`, `remove`, `rm`, `find`, `show`, `upgrade`
+- `uninstall` command.
+- `update` command.
+- `list --installed` flag.
+- Letta agent support.
+- Command aliases: `add`, `remove`, `rm`, `find`, `show`, `upgrade`.
 
 ### Fixed
-- Description truncation now only adds "..." when actually truncated
+- Description truncation only adds `...` when needed.
 
-## [1.0.7] - 2024-12-19
+## [1.0.7] - 2025-12-19
 
 ### Added
-- Credits & Attribution section in README
-- npm downloads badge
-- Full skill listing in README (all 38 skills now documented)
+- Credits and attribution section in the README.
+- npm downloads badge.
+- Full skill listing in the README.
 
 ### Fixed
-- `--agent` flag parsing improvements
-- Codex agent support
+- `--agent` flag parsing.
+- Codex agent support.
 
-## [1.0.6] - 2024-12-18
+## [1.0.6] - 2025-12-18
 
 ### Added
-- 15 new skills from ComposioHQ ecosystem:
-  - `artifacts-builder` - Interactive React/Tailwind components
-  - `changelog-generator` - Generate changelogs from git commits
-  - `competitive-ads-extractor` - Analyze competitor ads
-  - `content-research-writer` - Research and write with citations
-  - `developer-growth-analysis` - Track developer metrics
-  - `domain-name-brainstormer` - Generate domain name ideas
-  - `file-organizer` - Organize files and find duplicates
-  - `image-enhancer` - Improve image quality
-  - `invoice-organizer` - Organize invoices for tax prep
-  - `lead-research-assistant` - Identify and qualify leads
-  - `meeting-insights-analyzer` - Analyze meeting transcripts
-  - `raffle-winner-picker` - Select contest winners
-  - `slack-gif-creator` - Create animated GIFs for Slack
-  - `theme-factory` - Professional font and color themes
-  - `video-downloader` - Download videos from platforms
-- Cross-link to Awesome Agent Skills repository
+- 15 new skills from the ComposioHQ ecosystem:
+  - `artifacts-builder`
+  - `changelog-generator`
+  - `competitive-ads-extractor`
+  - `content-research-writer`
+  - `developer-growth-analysis`
+  - `domain-name-brainstormer`
+  - `file-organizer`
+  - `image-enhancer`
+  - `invoice-organizer`
+  - `lead-research-assistant`
+  - `meeting-insights-analyzer`
+  - `raffle-winner-picker`
+  - `slack-gif-creator`
+  - `theme-factory`
+  - `video-downloader`
+- Cross-link to the Awesome Agent Skills repository.
 
-## [1.0.5] - 2024-12-17
+## [1.0.5] - 2025-12-18
 
 ### Fixed
-- VS Code install message now correctly shows `.github/skills/`
+- VS Code install message now correctly shows `.github/skills/`.
 
-## [1.0.4] - 2024-12-17
+## [1.0.4] - 2025-12-18
 
 ### Fixed
-- VS Code path corrected to `.github/skills/` (was `.vscode/`)
+- VS Code path corrected to `.github/skills/` from `.vscode/`.
 
-## [1.0.3] - 2024-12-17
-
-### Added
-- `job-application` skill for cover letters and applications
-
-## [1.0.2] - 2024-12-17
+## [1.0.3] - 2025-12-18
 
 ### Added
-- Multi-agent support with `--agent` flag
-- Support for Claude Code, Cursor, Amp, VS Code, Goose, OpenCode
-- Portable install option with `--agent project`
+- `job-application` skill.
 
-## [1.0.1] - 2024-12-16
+## [1.0.2] - 2025-12-18
 
 ### Added
-- `qa-regression` skill for automated Playwright testing
-- `jira-issues` skill for Jira integration
-- GitHub issue templates and PR templates
-- CI validation workflow
-- Funding configuration
+- Multi-agent support with `--agent`.
+- Support for Claude Code, Cursor, Amp, VS Code, Goose, OpenCode, and portable installs.
 
-## [1.0.0] - 2024-12-16
+## [1.0.1] - 2025-12-18
 
 ### Added
-- Initial release with 20 curated skills
-- NPX installer (`npx ai-agent-skills install <name>`)
-- Skills from Anthropic's official examples
-- Core document skills: `pdf`, `xlsx`, `docx`, `pptx`
-- Development skills: `frontend-design`, `mcp-builder`, `skill-creator`
-- Creative skills: `canvas-design`, `algorithmic-art`
+- `qa-regression` skill.
+- `jira-issues` skill.
+- GitHub issue templates and PR templates.
+- CI validation workflow.
+- Funding configuration.
+
+## [1.0.0] - 2025-12-17
+
+### Added
+- Initial release with 20 curated skills.
+- NPX installer: `npx ai-agent-skills install <name>`.
+- Skills from Anthropic's official examples.
+- Core document skills: `pdf`, `xlsx`, `docx`, `pptx`.
+- Development skills including `frontend-design`, `mcp-builder`, and `skill-creator`.
+- Creative skills including `canvas-design` and `algorithmic-art`.

@@ -1,7 +1,7 @@
 {
-  "version": "1.4.0",
+  "version": "1.9.2",
   "updated": "2026-03-13T00:00:00Z",
-  "total": 47,
+  "total": 41,
   "collections": [
     {
       "id": "my-picks",
@@ -9,8 +9,6 @@
       "description": "The skills I would install first on a fresh setup.",
       "skills": [
         "frontend-design",
-        "react-best-practices",
-        "expo-app-design",
         "mcp-builder",
         "pdf",
         "doc-coauthoring",
@@ -22,17 +20,12 @@
     {
       "id": "build-apps",
       "title": "Build Apps",
-      "description": "The core skills for building web and mobile products with a strong interface bar.",
+      "description": "The core skills for building web products and polished interfaces with a strong design bar.",
       "skills": [
-        "react-best-practices",
-        "web-design-guidelines",
-        "vercel-deploy",
-        "expo-app-design",
-        "expo-deployment",
-        "upgrading-expo",
         "frontend-design",
         "artifacts-builder",
-        "theme-factory"
+        "theme-factory",
+        "canvas-design"
       ]
     },
     {
@@ -84,114 +77,6 @@
   ],
   "skills": [
     {
-      "name": "react-best-practices",
-      "description": "React development guidelines with hooks, component patterns, state management, and performance optimization. Use for building React apps with modern best practices.",
-      "category": "development",
-      "author": "vercel",
-      "source": "vercel/skills",
-      "license": "MIT",
-      "path": "skills/react-best-practices",
-      "tags": [
-        "react",
-        "typescript",
-        "nextjs"
-      ],
-      "stars": 15000,
-      "downloads": 2400,
-      "featured": true,
-      "verified": true
-    },
-    {
-      "name": "web-design-guidelines",
-      "description": "Modern web design principles for responsive layouts, accessibility, and visual hierarchy. Use for creating polished web interfaces.",
-      "category": "development",
-      "author": "vercel",
-      "source": "vercel/skills",
-      "license": "MIT",
-      "path": "skills/web-design-guidelines",
-      "tags": [
-        "react",
-        "nextjs",
-        "typescript"
-      ],
-      "stars": 15000,
-      "downloads": 1800,
-      "featured": false,
-      "verified": true
-    },
-    {
-      "name": "vercel-deploy",
-      "description": "Deploy applications to Vercel with edge functions, serverless, and ISR. Use for deploying Next.js and other web applications.",
-      "category": "development",
-      "author": "vercel",
-      "source": "vercel/skills",
-      "license": "MIT",
-      "path": "skills/vercel-deploy",
-      "tags": [
-        "nextjs",
-        "node",
-        "typescript"
-      ],
-      "stars": 15000,
-      "downloads": 2100,
-      "featured": true,
-      "verified": true
-    },
-    {
-      "name": "expo-app-design",
-      "description": "Build beautiful cross-platform mobile apps with Expo Router, NativeWind, and React Native. Covers navigation, styling, animations, and native tabs.",
-      "category": "development",
-      "author": "expo",
-      "source": "expo/skills",
-      "license": "MIT",
-      "path": "skills/expo-app-design",
-      "tags": [
-        "expo",
-        "react",
-        "typescript"
-      ],
-      "stars": 38000,
-      "downloads": 3200,
-      "featured": true,
-      "verified": true
-    },
-    {
-      "name": "expo-deployment",
-      "description": "Deploy Expo apps to iOS App Store, Android Play Store, and web. Covers EAS Build, OTA updates, and CI/CD workflows.",
-      "category": "development",
-      "author": "expo",
-      "source": "expo/skills",
-      "license": "MIT",
-      "path": "skills/expo-deployment",
-      "tags": [
-        "expo",
-        "react",
-        "node"
-      ],
-      "stars": 38000,
-      "downloads": 2800,
-      "featured": true,
-      "verified": true
-    },
-    {
-      "name": "upgrading-expo",
-      "description": "Guidelines for upgrading Expo SDK versions and fixing dependency issues. Safe migration patterns and breaking change handling.",
-      "category": "development",
-      "author": "expo",
-      "source": "expo/skills",
-      "license": "MIT",
-      "path": "skills/upgrading-expo",
-      "tags": [
-        "expo",
-        "react",
-        "typescript"
-      ],
-      "stars": 38000,
-      "downloads": 1500,
-      "featured": false,
-      "verified": true
-    },
-    {
       "name": "frontend-design",
       "description": "Create distinctive, production-grade frontend interfaces with high design quality. Use for building web components, pages, dashboards, React components, HTML/CSS layouts, or styling any web UI.",
       "category": "development",
@@ -204,10 +89,10 @@
         "typescript",
         "nextjs"
       ],
-      "stars": 21600,
-      "downloads": 1320,
       "featured": true,
-      "verified": true
+      "verified": true,
+      "origin": "curated",
+      "trust": "verified"
     },
     {
       "name": "pdf",
@@ -220,10 +105,10 @@
       "tags": [
         "python"
       ],
-      "stars": 21600,
-      "downloads": 890,
       "featured": true,
-      "verified": true
+      "verified": true,
+      "origin": "curated",
+      "trust": "verified"
     },
     {
       "name": "xlsx",
@@ -233,10 +118,10 @@
       "source": "anthropics/skills",
       "license": "Apache-2.0",
       "path": "skills/xlsx",
-      "stars": 21600,
-      "downloads": 720,
       "featured": false,
-      "verified": true
+      "verified": true,
+      "origin": "curated",
+      "trust": "verified"
     },
     {
       "name": "docx",
@@ -246,10 +131,10 @@
       "source": "anthropics/skills",
       "license": "Apache-2.0",
       "path": "skills/docx",
-      "stars": 21600,
-      "downloads": 580,
       "featured": false,
-      "verified": true
+      "verified": true,
+      "origin": "curated",
+      "trust": "verified"
     },
     {
       "name": "pptx",
@@ -259,10 +144,10 @@
       "source": "anthropics/skills",
       "license": "Apache-2.0",
       "path": "skills/pptx",
-      "stars": 21600,
-      "downloads": 450,
       "featured": false,
-      "verified": true
+      "verified": true,
+      "origin": "curated",
+      "trust": "verified"
     },
     {
       "name": "mcp-builder",
@@ -277,10 +162,10 @@
         "typescript",
         "node"
       ],
-      "stars": 21600,
-      "downloads": 1150,
       "featured": true,
-      "verified": true
+      "verified": true,
+      "origin": "curated",
+      "trust": "verified"
     },
     {
       "name": "skill-creator",
@@ -290,10 +175,10 @@
       "source": "anthropics/skills",
       "license": "Apache-2.0",
       "path": "skills/skill-creator",
-      "stars": 21600,
-      "downloads": 980,
       "featured": true,
-      "verified": true
+      "verified": true,
+      "origin": "curated",
+      "trust": "verified"
     },
     {
       "name": "doc-coauthoring",
@@ -303,10 +188,10 @@
       "source": "anthropics/skills",
       "license": "Apache-2.0",
       "path": "skills/doc-coauthoring",
-      "stars": 22400,
-      "downloads": 0,
       "featured": true,
-      "verified": true
+      "verified": true,
+      "origin": "curated",
+      "trust": "verified"
     },
     {
       "name": "canvas-design",
@@ -316,10 +201,10 @@
       "source": "anthropics/skills",
       "license": "Apache-2.0",
       "path": "skills/canvas-design",
-      "stars": 21600,
-      "downloads": 340,
       "featured": false,
-      "verified": true
+      "verified": true,
+      "origin": "curated",
+      "trust": "verified"
     },
     {
       "name": "algorithmic-art",
@@ -329,10 +214,10 @@
       "source": "anthropics/skills",
       "license": "Apache-2.0",
       "path": "skills/algorithmic-art",
-      "stars": 21600,
-      "downloads": 280,
       "featured": false,
-      "verified": true
+      "verified": true,
+      "origin": "curated",
+      "trust": "verified"
     },
     {
       "name": "webapp-testing",
@@ -347,10 +232,10 @@
         "node",
         "react"
       ],
-      "stars": 21600,
-      "downloads": 620,
       "featured": false,
-      "verified": true
+      "verified": true,
+      "origin": "curated",
+      "trust": "verified"
     },
     {
       "name": "brand-guidelines",
@@ -360,10 +245,10 @@
       "source": "anthropics/skills",
       "license": "Apache-2.0",
       "path": "skills/brand-guidelines",
-      "stars": 21600,
-      "downloads": 310,
       "featured": false,
-      "verified": true
+      "verified": true,
+      "origin": "curated",
+      "trust": "verified"
     },
     {
       "name": "internal-comms",
@@ -373,10 +258,10 @@
       "source": "anthropics/skills",
       "license": "Apache-2.0",
       "path": "skills/internal-comms",
-      "stars": 21600,
-      "downloads": 270,
       "featured": false,
-      "verified": true
+      "verified": true,
+      "origin": "curated",
+      "trust": "verified"
     },
     {
       "name": "code-review",
@@ -386,10 +271,10 @@
       "source": "anthropics/claude-code",
       "license": "Apache-2.0",
       "path": "skills/code-review",
-      "stars": 46100,
-      "downloads": 2100,
       "featured": true,
-      "verified": true
+      "verified": true,
+      "origin": "curated",
+      "trust": "verified"
     },
     {
       "name": "python-development",
@@ -402,10 +287,10 @@
       "tags": [
         "python"
       ],
-      "stars": 22900,
-      "downloads": 388,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "javascript-typescript",
@@ -420,10 +305,10 @@
         "react",
         "node"
       ],
-      "stars": 22900,
-      "downloads": 394,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "backend-development",
@@ -438,10 +323,10 @@
         "python",
         "typescript"
       ],
-      "stars": 22900,
-      "downloads": 320,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "database-design",
@@ -451,10 +336,10 @@
       "source": "wshobson/agents",
       "license": "MIT",
       "path": "skills/database-design",
-      "stars": 22900,
-      "downloads": 245,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "code-refactoring",
@@ -464,10 +349,10 @@
       "source": "wshobson/agents",
       "license": "MIT",
       "path": "skills/code-refactoring",
-      "stars": 22900,
-      "downloads": 210,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "llm-application-dev",
@@ -482,10 +367,10 @@
         "typescript",
         "node"
       ],
-      "stars": 22900,
-      "downloads": 560,
       "featured": true,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "reviewed"
     },
     {
       "name": "code-documentation",
@@ -495,10 +380,10 @@
       "source": "wshobson/agents",
       "license": "MIT",
       "path": "skills/code-documentation",
-      "stars": 22900,
-      "downloads": 180,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "jira-issues",
@@ -508,10 +393,10 @@
       "source": "MoizIbnYousaf/Ai-Agent-Skills",
       "license": "MIT",
       "path": "skills/jira-issues",
-      "stars": 100,
-      "downloads": 50,
       "featured": true,
-      "verified": true
+      "verified": true,
+      "origin": "authored",
+      "trust": "verified"
     },
     {
       "name": "qa-regression",
@@ -525,10 +410,10 @@
         "typescript",
         "node"
       ],
-      "stars": 100,
-      "downloads": 0,
       "featured": true,
-      "verified": true
+      "verified": true,
+      "origin": "authored",
+      "trust": "verified"
     },
     {
       "name": "job-application",
@@ -538,10 +423,10 @@
       "source": "MoizIbnYousaf/Ai-Agent-Skills",
       "license": "MIT",
       "path": "skills/job-application",
-      "stars": 100,
-      "downloads": 0,
       "featured": true,
-      "verified": true
+      "verified": true,
+      "origin": "authored",
+      "trust": "verified"
     },
     {
       "name": "ask-questions-if-underspecified",
@@ -557,10 +442,10 @@
         "workflow",
         "codex"
       ],
-      "stars": 100,
-      "downloads": 0,
       "featured": true,
-      "verified": true
+      "verified": true,
+      "origin": "authored",
+      "trust": "verified"
     },
     {
       "name": "best-practices",
@@ -576,10 +461,10 @@
         "productivity",
         "optimization"
       ],
-      "stars": 100,
-      "downloads": 0,
       "featured": true,
-      "verified": true
+      "verified": true,
+      "origin": "authored",
+      "trust": "verified"
     },
     {
       "name": "artifacts-builder",
@@ -593,10 +478,10 @@
         "react",
         "typescript"
       ],
-      "stars": 500,
-      "downloads": 0,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "changelog-generator",
@@ -606,10 +491,10 @@
       "source": "ComposioHQ/awesome-claude-skills",
       "license": "Apache-2.0",
       "path": "skills/changelog-generator",
-      "stars": 500,
-      "downloads": 0,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "competitive-ads-extractor",
@@ -619,10 +504,10 @@
       "source": "ComposioHQ/awesome-claude-skills",
       "license": "Apache-2.0",
       "path": "skills/competitive-ads-extractor",
-      "stars": 500,
-      "downloads": 0,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "content-research-writer",
@@ -632,10 +517,10 @@
       "source": "ComposioHQ/awesome-claude-skills",
       "license": "Apache-2.0",
       "path": "skills/content-research-writer",
-      "stars": 500,
-      "downloads": 0,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "developer-growth-analysis",
@@ -645,10 +530,10 @@
       "source": "ComposioHQ/awesome-claude-skills",
       "license": "Apache-2.0",
       "path": "skills/developer-growth-analysis",
-      "stars": 500,
-      "downloads": 0,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "domain-name-brainstormer",
@@ -658,10 +543,10 @@
       "source": "ComposioHQ/awesome-claude-skills",
       "license": "Apache-2.0",
       "path": "skills/domain-name-brainstormer",
-      "stars": 500,
-      "downloads": 0,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "file-organizer",
@@ -671,10 +556,10 @@
       "source": "ComposioHQ/awesome-claude-skills",
       "license": "Apache-2.0",
       "path": "skills/file-organizer",
-      "stars": 500,
-      "downloads": 0,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "image-enhancer",
@@ -684,10 +569,10 @@
       "source": "ComposioHQ/awesome-claude-skills",
       "license": "Apache-2.0",
       "path": "skills/image-enhancer",
-      "stars": 500,
-      "downloads": 0,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "invoice-organizer",
@@ -697,10 +582,10 @@
       "source": "ComposioHQ/awesome-claude-skills",
       "license": "Apache-2.0",
       "path": "skills/invoice-organizer",
-      "stars": 500,
-      "downloads": 0,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "lead-research-assistant",
@@ -710,10 +595,10 @@
       "source": "ComposioHQ/awesome-claude-skills",
       "license": "Apache-2.0",
       "path": "skills/lead-research-assistant",
-      "stars": 500,
-      "downloads": 0,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "meeting-insights-analyzer",
@@ -723,10 +608,10 @@
       "source": "ComposioHQ/awesome-claude-skills",
       "license": "Apache-2.0",
       "path": "skills/meeting-insights-analyzer",
-      "stars": 500,
-      "downloads": 0,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "raffle-winner-picker",
@@ -736,10 +621,10 @@
       "source": "ComposioHQ/awesome-claude-skills",
       "license": "Apache-2.0",
       "path": "skills/raffle-winner-picker",
-      "stars": 500,
-      "downloads": 0,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "slack-gif-creator",
@@ -749,10 +634,10 @@
       "source": "ComposioHQ/awesome-claude-skills",
       "license": "Apache-2.0",
       "path": "skills/slack-gif-creator",
-      "stars": 500,
-      "downloads": 0,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "theme-factory",
@@ -762,10 +647,10 @@
       "source": "ComposioHQ/awesome-claude-skills",
       "license": "Apache-2.0",
       "path": "skills/theme-factory",
-      "stars": 500,
-      "downloads": 0,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     },
     {
       "name": "video-downloader",
@@ -775,10 +660,10 @@
       "source": "ComposioHQ/awesome-claude-skills",
       "license": "Apache-2.0",
       "path": "skills/video-downloader",
-      "stars": 500,
-      "downloads": 0,
       "featured": false,
-      "verified": false
+      "verified": false,
+      "origin": "curated",
+      "trust": "listed"
     }
   ]
 }

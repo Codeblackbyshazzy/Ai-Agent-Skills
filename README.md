@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/skills-47-blue?style=flat-square" alt="Skills" />
+  <img src="https://img.shields.io/badge/skills-41-blue?style=flat-square" alt="Skills" />
   <img src="https://img.shields.io/badge/agents-11+-green?style=flat-square" alt="Compatible Agents" />
   <img src="https://img.shields.io/npm/v/ai-agent-skills?style=flat-square&color=red" alt="npm" />
   <img src="https://img.shields.io/npm/dt/ai-agent-skills?style=flat-square&color=orange" alt="Downloads" />
@@ -61,6 +61,7 @@ By default, `install` targets the major agents I already support: Claude Code, C
 
 - `Collections` are the first place I would tell someone to browse.
 - `My Picks` is where I would tell most people to start.
+- `Source` stays attached to every skill. The library matters, but so does provenance.
 - `Featured` means I would actively point someone to that skill first.
 - `Verified` means I have personally checked the skill and its metadata.
 - `Categories`, `tags`, and search cover everything that does not need a top-level shelf.
@@ -74,7 +75,7 @@ Start here. They are the front shelf, not the whole catalog.
 | Collection | What it's for | Start with |
 |-------|-------------|-------------|
 | `my-picks` | The first skills I would install on a fresh setup | `frontend-design`, `mcp-builder`, `qa-regression` |
-| `build-apps` | Web and mobile product work with a high interface bar | `frontend-design`, `react-best-practices`, `expo-app-design` |
+| `build-apps` | Web product work with a high interface bar | `frontend-design`, `artifacts-builder`, `theme-factory` |
 | `build-systems` | Backend, architecture, MCP, and deeper engineering work | `mcp-builder`, `backend-development`, `database-design` |
 | `test-and-debug` | Review, QA, debugging, and cleanup work | `qa-regression`, `code-review`, `webapp-testing` |
 | `docs-and-research` | Docs, files, research, and execution support | `pdf`, `doc-coauthoring`, `code-documentation` |

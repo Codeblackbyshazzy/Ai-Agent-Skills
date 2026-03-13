@@ -264,6 +264,30 @@ function getCollectionsForSkill(data, skillName) {
   );
 }
 
+function getOrigin(skill) {
+  if (skill && typeof skill.origin === 'string' && skill.origin.trim()) {
+    return skill.origin;
+  }
+  return skill.source === 'MoizIbnYousaf/Ai-Agent-Skills' ? 'authored' : 'curated';
+}
+
+function getTrust(skill) {
+  if (skill && typeof skill.trust === 'string' && skill.trust.trim()) {
+    return skill.trust;
+  }
+  if (skill.verified) return 'verified';
+  if (skill.featured) return 'reviewed';
+  return 'listed';
+}
+
+function getSkillMeta(skill, includeCategory = true) {
+  const parts = [];
+  if (includeCategory && skill.category) parts.push(skill.category);
+  parts.push(getOrigin(skill));
+  if (skill.source) parts.push(skill.source);
+  return parts.join(' · ');
+}
+
 function filterSkillsByCollection(data, skills, collectionId) {
   if (!collectionId) {
     return { collection: null, skills, message: null, unknown: false, retired: false };
@@ -1023,7 +1047,7 @@ function listSkills(category = null, tags = null, collectionId = null) {
         : '';
 
       log(`  ${colors.green}${skill.name}${colors.reset}${featured}${verified}${tagStr}`);
-      log(`    ${colors.dim}${skill.category}${colors.reset}`);
+      log(`    ${colors.dim}${getSkillMeta(skill)}${colors.reset}`);
 
       const desc = skill.description.length > 80
         ? skill.description.slice(0, 80) + '...'
@@ -1048,6 +1072,7 @@ function listSkills(category = null, tags = null, collectionId = null) {
           : '';
 
         log(`  ${colors.green}${skill.name}${colors.reset}${featured}${verified}${tagStr}`);
+        log(`    ${colors.dim}${getSkillMeta(skill, false)}${colors.reset}`);
 
         const desc = skill.description.length > 65
           ? skill.description.slice(0, 65) + '...'
@@ -1124,6 +1149,7 @@ function searchSkills(query, category = null, collectionId = null) {
       : '';
 
     log(`${colors.green}${skill.name}${colors.reset} ${colors.dim}[${skill.category}]${colors.reset}${tagStr}`);
+    log(`  ${colors.dim}${getOrigin(skill)} · ${getTrust(skill)} · ${skill.source}${colors.reset}`);
 
     const desc = skill.description.length > 75
       ? skill.description.slice(0, 75) + '...'
@@ -1939,11 +1965,13 @@ ${colors.bold}${skill.name}${colors.reset}${skill.featured ? ` ${colors.yellow}(
 ${colors.dim}${skill.description}${colors.reset}
 
 ${colors.bold}Category:${colors.reset}    ${skill.category}
+${colors.bold}Trust:${colors.reset}       ${getTrust(skill)}
+${colors.bold}Origin:${colors.reset}      ${getOrigin(skill)}
 ${colors.bold}Tags:${colors.reset}        ${tagStr}
 ${colors.bold}Collections:${colors.reset} ${collectionStr}
 ${colors.bold}Author:${colors.reset}      ${skill.author}
 ${colors.bold}License:${colors.reset}     ${skill.license}
-${colors.bold}Source:${colors.reset}      ${skill.source}
+${colors.bold}Source Repo:${colors.reset} ${skill.source}
 ${skill.lastUpdated ? `${colors.bold}Updated:${colors.reset}     ${skill.lastUpdated}\n` : ''}
 ${colors.bold}Install:${colors.reset}
   npx ai-agent-skills install ${skill.name}
