@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/skills-41-blue?style=flat-square" alt="Skills" />
+  <img src="https://img.shields.io/badge/skills-48-blue?style=flat-square" alt="Skills" />
   <img src="https://img.shields.io/badge/agents-11+-green?style=flat-square" alt="Compatible Agents" />
   <img src="https://img.shields.io/npm/v/ai-agent-skills?style=flat-square&color=red" alt="npm" />
   <img src="https://img.shields.io/npm/dt/ai-agent-skills?style=flat-square&color=orange" alt="Downloads" />
@@ -18,7 +18,8 @@
 
 <p align="center">
   <a href="#quick-start"><strong>Quick Start</strong></a> ·
-  <a href="#collections"><strong>Collections</strong></a> ·
+  <a href="#work-areas"><strong>Work Areas</strong></a> ·
+  <a href="#cli-collections"><strong>CLI Collections</strong></a> ·
   <a href="./CURATION.md"><strong>Curation Guide</strong></a> ·
   <a href="./CONTRIBUTING.md"><strong>Contribute</strong></a> ·
   <a href="https://agentskills.io"><strong>Specification</strong></a>
@@ -48,8 +49,8 @@ npx ai-agent-skills install frontend-design --agent cursor
 # Browse curated collections
 npx ai-agent-skills collections
 
-# See my starter set
-npx ai-agent-skills list --collection my-picks
+# Browse by work area
+npx ai-agent-skills list --work-area frontend
 
 # Search the catalog
 npx ai-agent-skills search testing
@@ -59,8 +60,8 @@ By default, `install` targets the major agents I already support: Claude Code, C
 
 ## How I Organize It
 
-- `Collections` are the first place I would tell someone to browse.
-- `My Picks` is where I would tell most people to start.
+- `Work areas` are the main way to understand the library.
+- `Collections` still exist as the fastest CLI shortcuts.
 - A few skills are authored here. Most are curated from upstream repos and kept clearly attributed.
 - `Source` stays attached to every skill. The library matters, but so does provenance.
 - `Featured` means I would actively point someone to that skill first.
@@ -68,18 +69,36 @@ By default, `install` targets the major agents I already support: Claude Code, C
 - `Categories`, `tags`, and search cover everything that does not need a top-level shelf.
 
 The folder layout stays flat under `skills/<name>/` because installs stay simpler that way. The catalog handles the grouping.
+The full repo map lives in [WORK_AREAS.md](./WORK_AREAS.md).
 
-## Collections
+## Work Areas
 
-Start here. They are the front shelf, not the whole catalog.
+This is the cleanest way to read the library.
+The full repo index is in [WORK_AREAS.md](./WORK_AREAS.md).
+
+| Work area | What it covers | Typical branches | Main sources |
+|-----------|----------------|------------------|--------------|
+| Frontend | Product UI, interface systems, and design implementation work | React, Figma, UI | Anthropic, OpenAI, Composio |
+| Backend | APIs, architecture, databases, MCP, and deeper codebase work | MCP, Database, Python | wshobson, Anthropic |
+| Mobile | Handheld product work and release support | Expo, Swift | Selective coverage |
+| Docs | Documents, specs, code docs, and product documentation | PDF, Writing, OpenAI | Anthropic, OpenAI |
+| Testing | Review, QA, browser automation, CI, and observability | Regression, CI, Browser Automation, Observability | Moiz, Anthropic, OpenAI |
+| Workflow | Clarification, plans, files, and execution support | Clarification, Planning, Jira, Files | Moiz, OpenAI, Composio |
+| Research | Research, lead work, and synthesis that helps execution | Writing, Lead Research | Composio |
+| Design | Interface direction, themes, media, and visual craft | Interface, Figma, Themes | Anthropic, OpenAI, Composio |
+| Business | Brand, communication, naming, and adjacent operating work | Brand, Communication, Career | Anthropic, Moiz, Composio |
+
+## CLI Collections
+
+These are still useful when you want a short shelf in the CLI instead of the full work-area view.
 
 | Collection | What it's for | Start with | Main sources |
 |-------|-------------|-------------|--------------|
 | `my-picks` | The first skills I would install on a fresh setup | `frontend-design`, `mcp-builder`, `qa-regression` | Anthropic, Moiz |
-| `build-apps` | Web product work with a high interface bar | `frontend-design`, `artifacts-builder`, `theme-factory` | Anthropic, Composio |
+| `build-apps` | Web product work with a high interface bar | `frontend-design`, `figma-implement-design`, `theme-factory` | Anthropic, OpenAI, Composio |
 | `build-systems` | Backend, architecture, MCP, and deeper engineering work | `mcp-builder`, `backend-development`, `database-design` | wshobson, Anthropic |
-| `test-and-debug` | Review, QA, debugging, and cleanup work | `qa-regression`, `code-review`, `webapp-testing` | Moiz, Anthropic |
-| `docs-and-research` | Docs, files, research, and execution support | `pdf`, `doc-coauthoring`, `code-documentation` | Anthropic, Composio |
+| `test-and-debug` | Review, QA, debugging, and cleanup work | `gh-fix-ci`, `playwright`, `qa-regression` | Moiz, Anthropic, OpenAI |
+| `docs-and-research` | Docs, files, research, and execution support | `openai-docs`, `pdf`, `notion-spec-to-implementation` | Anthropic, OpenAI, Composio |
 
 CLI shortcuts:
 
@@ -98,6 +117,7 @@ This is still my library, but the upstream lineage stays visible on purpose.
 |------------|----------------|-----------------|
 | [Anthropic Skills](https://github.com/anthropics/skills) | The strongest general-purpose skill set in the ecosystem, especially for frontend, docs, and workflow. | 13 skills |
 | [Anthropic Claude Code](https://github.com/anthropics/claude-code) | Extra Claude Code workflow coverage that belongs here when it clears the bar. | 1 skill |
+| [OpenAI Skills](https://github.com/openai/skills) | Strong skills for docs, Figma workflows, browser automation, CI work, and implementation planning. | 7 skills |
 | [wshobson/agents](https://github.com/wshobson/agents) | Strong backend, systems, and architecture coverage. | 7 skills |
 | [ComposioHQ/awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills) | Broad practical coverage for workflow, files, research, and creative tasks. | 15 skills |
 | [MoizIbnYousaf/Ai-Agent-Skills](https://github.com/MoizIbnYousaf/Ai-Agent-Skills) | The skills I write and maintain directly. | 5 skills |
@@ -124,6 +144,7 @@ This is still my library, but the upstream lineage stays visible on purpose.
 # Discovery
 npx ai-agent-skills collections
 npx ai-agent-skills list
+npx ai-agent-skills list --work-area frontend
 npx ai-agent-skills list --category development
 npx ai-agent-skills list --collection my-picks
 npx ai-agent-skills search testing
@@ -193,6 +214,7 @@ This library builds on work from the open-source community, especially:
 
 - [Anthropic Skills](https://github.com/anthropics/skills)
 - [Anthropic Claude Code](https://github.com/anthropics/claude-code)
+- [OpenAI Skills](https://github.com/openai/skills)
 - [ComposioHQ Awesome Claude Skills](https://github.com/ComposioHQ/awesome-claude-skills)
 - [wshobson/agents](https://github.com/wshobson/agents)
 

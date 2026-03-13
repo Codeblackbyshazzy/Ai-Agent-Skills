@@ -264,6 +264,37 @@ function getCollectionsForSkill(data, skillName) {
   );
 }
 
+function getWorkAreas(data) {
+  return Array.isArray(data.workAreas) ? data.workAreas : [];
+}
+
+function formatWorkAreaTitle(workArea) {
+  if (!workArea || typeof workArea !== 'string') return 'Other';
+  if (workArea === 'docs') return 'Docs';
+  return workArea
+    .split('-')
+    .map(token => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(' ');
+}
+
+function getWorkAreaMeta(data, workAreaId) {
+  return getWorkAreas(data).find(area => area.id === workAreaId) || null;
+}
+
+function getSkillWorkArea(skill) {
+  if (skill && typeof skill.workArea === 'string' && skill.workArea.trim()) {
+    return skill.workArea;
+  }
+  return null;
+}
+
+function getSkillBranch(skill) {
+  if (skill && typeof skill.branch === 'string' && skill.branch.trim()) {
+    return skill.branch;
+  }
+  return null;
+}
+
 function getOrigin(skill) {
   if (skill && typeof skill.origin === 'string' && skill.origin.trim()) {
     return skill.origin;
@@ -282,7 +313,15 @@ function getTrust(skill) {
 
 function getSkillMeta(skill, includeCategory = true) {
   const parts = [];
-  if (includeCategory && skill.category) parts.push(skill.category);
+  const workArea = getSkillWorkArea(skill);
+  const branch = getSkillBranch(skill);
+  if (workArea && branch) {
+    parts.push(`${formatWorkAreaTitle(workArea)} / ${branch}`);
+  } else if (workArea) {
+    parts.push(formatWorkAreaTitle(workArea));
+  } else if (includeCategory && skill.category) {
+    parts.push(skill.category);
+  }
   parts.push(getOrigin(skill));
   if (skill.source) parts.push(skill.source);
   return parts.join(' · ');
@@ -361,6 +400,7 @@ function parseArgs(args) {
     dryRun: false,
     tags: null,
     category: null,
+    workArea: null,
     collection: null
   };
 
@@ -409,6 +449,10 @@ function parseArgs(args) {
     }
     else if (arg === '--category' || arg === '-c') {
       result.category = args[i + 1];
+      i++;
+    }
+    else if (arg === '--work-area' || arg === '--area') {
+      result.workArea = args[i + 1];
       i++;
     }
     else if (arg === '--collection') {
@@ -993,13 +1037,17 @@ function updateAllSkills(agent = 'claude', dryRun = false) {
 
 // ============ LISTING AND SEARCH ============
 
-function listSkills(category = null, tags = null, collectionId = null) {
+function listSkills(category = null, tags = null, collectionId = null, workArea = null) {
   const data = loadSkillsJson();
   let skills = data.skills || [];
 
   // Filter by category
   if (category) {
     skills = skills.filter(s => s.category === category.toLowerCase());
+  }
+
+  if (workArea) {
+    skills = skills.filter(s => (s.workArea || '').toLowerCase() === workArea.toLowerCase());
   }
 
   // Filter by tags
@@ -1024,7 +1072,7 @@ function listSkills(category = null, tags = null, collectionId = null) {
   skills = collectionResult.skills;
 
   if (skills.length === 0) {
-    if (category || tags || collectionId) {
+    if (category || workArea || tags || collectionId) {
       warn(`No skills found matching filters`);
       log(`\n${colors.dim}Try: npx ai-agent-skills list${colors.reset}`);
     } else {
@@ -1055,16 +1103,26 @@ function listSkills(category = null, tags = null, collectionId = null) {
       log(`    ${colors.dim}${desc}${colors.reset}`);
     });
   } else {
-    const byCategory = {};
+    const byWorkArea = {};
     skills.forEach(skill => {
-      const cat = skill.category || 'other';
-      if (!byCategory[cat]) byCategory[cat] = [];
-      byCategory[cat].push(skill);
+      const area = getSkillWorkArea(skill) || 'other';
+      if (!byWorkArea[area]) byWorkArea[area] = [];
+      byWorkArea[area].push(skill);
     });
 
-    Object.keys(byCategory).sort().forEach(cat => {
-      log(`${colors.blue}${colors.bold}${cat.toUpperCase()}${colors.reset}`);
-      byCategory[cat].forEach(skill => {
+    const orderedAreas = [
+      ...getWorkAreas(data).map(area => area.id),
+      ...Object.keys(byWorkArea).filter(area => !getWorkAreaMeta(data, area)).sort()
+    ].filter((area, index, array) => array.indexOf(area) === index && byWorkArea[area]);
+
+    orderedAreas.forEach(areaId => {
+      const meta = getWorkAreaMeta(data, areaId);
+      const title = meta ? meta.title : formatWorkAreaTitle(areaId);
+      log(`${colors.blue}${colors.bold}${title.toUpperCase()}${colors.reset}`);
+      if (meta && meta.description) {
+        log(`${colors.dim}${meta.description}${colors.reset}`);
+      }
+      byWorkArea[areaId].forEach(skill => {
         const featured = skill.featured ? ` ${colors.yellow}*${colors.reset}` : '';
         const verified = skill.verified ? ` ${colors.green}✓${colors.reset}` : '';
         const tagStr = skill.tags && skill.tags.length > 0
@@ -1085,11 +1143,12 @@ function listSkills(category = null, tags = null, collectionId = null) {
 
   log(`${colors.dim}* = featured  ✓ = verified${colors.reset}`);
   log(`\nInstall: ${colors.cyan}npx ai-agent-skills install <skill-name>${colors.reset}`);
+  log(`Work areas: ${colors.cyan}npx ai-agent-skills list --work-area frontend${colors.reset}`);
   log(`Filter:  ${colors.cyan}npx ai-agent-skills list --category development${colors.reset}`);
   log(`Collections: ${colors.cyan}npx ai-agent-skills collections${colors.reset}`);
 }
 
-function searchSkills(query, category = null, collectionId = null) {
+function searchSkills(query, category = null, collectionId = null, workArea = null) {
   const data = loadSkillsJson();
   let skills = data.skills || [];
   const q = query.toLowerCase();
@@ -1097,6 +1156,10 @@ function searchSkills(query, category = null, collectionId = null) {
   // Filter by category first
   if (category) {
     skills = skills.filter(s => s.category === category.toLowerCase());
+  }
+
+  if (workArea) {
+    skills = skills.filter(s => (s.workArea || '').toLowerCase() === workArea.toLowerCase());
   }
 
   const collectionResult = filterSkillsByCollection(data, skills, collectionId);
@@ -1116,6 +1179,8 @@ function searchSkills(query, category = null, collectionId = null) {
   const matches = skills.filter(s =>
     s.name.toLowerCase().includes(q) ||
     s.description.toLowerCase().includes(q) ||
+    (s.workArea && s.workArea.toLowerCase().includes(q)) ||
+    (s.branch && s.branch.toLowerCase().includes(q)) ||
     (s.category && s.category.toLowerCase().includes(q)) ||
     (s.tags && s.tags.some(t => t.toLowerCase().includes(q)))
   );
@@ -1148,7 +1213,10 @@ function searchSkills(query, category = null, collectionId = null) {
       ? ` ${colors.magenta}[${skill.tags.slice(0, 3).join(', ')}]${colors.reset}`
       : '';
 
-    log(`${colors.green}${skill.name}${colors.reset} ${colors.dim}[${skill.category}]${colors.reset}${tagStr}`);
+    const label = getSkillWorkArea(skill) && getSkillBranch(skill)
+      ? `${formatWorkAreaTitle(getSkillWorkArea(skill))} / ${getSkillBranch(skill)}`
+      : skill.category;
+    log(`${colors.green}${skill.name}${colors.reset} ${colors.dim}[${label}]${colors.reset}${tagStr}`);
     log(`  ${colors.dim}${getOrigin(skill)} · ${getTrust(skill)} · ${skill.source}${colors.reset}`);
 
     const desc = skill.description.length > 75
@@ -1224,34 +1292,39 @@ async function browseSkills(agent = 'claude') {
     return;
   }
 
-  // Group by category
-  const categories = [...new Set(skills.map(s => s.category))].sort();
-  let currentCategory = 0;
+  const getSkillsInArea = (area) => skills.filter(s => getSkillWorkArea(s) === area);
+  const workAreas = [
+    ...getWorkAreas(data).map(area => area.id),
+    ...[...new Set(skills.map(skill => getSkillWorkArea(skill)).filter(Boolean))]
+      .filter(area => !getWorkAreaMeta(data, area))
+      .sort()
+  ].filter((area, index, array) =>
+    array.indexOf(area) === index && getSkillsInArea(area).length > 0
+  );
+  let currentWorkArea = 0;
   let currentSkill = 0;
-  let mode = 'category'; // 'category' or 'skill'
-
-  const getSkillsInCategory = (cat) => skills.filter(s => s.category === cat);
+  let mode = 'area'; // 'area' or 'skill'
 
   const render = () => {
     console.clear();
     log(`\n${colors.bold}🔧 AI Agent Skills Browser${colors.reset}`);
     log(`${colors.dim}Use ↑↓ to navigate, Enter to select, q to quit${colors.reset}\n`);
 
-    if (mode === 'category') {
-      log(`${colors.bold}Categories:${colors.reset}\n`);
-      categories.forEach((cat, i) => {
-        const count = getSkillsInCategory(cat).length;
-        const prefix = i === currentCategory ? `${colors.cyan}▶ ` : '  ';
-        const suffix = i === currentCategory ? colors.reset : '';
-        log(`${prefix}${cat.toUpperCase()} (${count})${suffix}`);
+    if (mode === 'area') {
+      log(`${colors.bold}Work Areas:${colors.reset}\n`);
+      workAreas.forEach((area, i) => {
+        const count = getSkillsInArea(area).length;
+        const prefix = i === currentWorkArea ? `${colors.cyan}▶ ` : '  ';
+        const suffix = i === currentWorkArea ? colors.reset : '';
+        log(`${prefix}${formatWorkAreaTitle(area).toUpperCase()} (${count})${suffix}`);
       });
-      log(`\n${colors.dim}Press Enter to browse skills in this category${colors.reset}`);
+      log(`\n${colors.dim}Press Enter to browse skills in this work area${colors.reset}`);
     } else {
-      const cat = categories[currentCategory];
-      const catSkills = getSkillsInCategory(cat);
-      log(`${colors.bold}${cat.toUpperCase()}${colors.reset} ${colors.dim}(← Backspace to go back)${colors.reset}\n`);
+      const area = workAreas[currentWorkArea];
+      const areaSkills = getSkillsInArea(area);
+      log(`${colors.bold}${formatWorkAreaTitle(area).toUpperCase()}${colors.reset} ${colors.dim}(← Backspace to go back)${colors.reset}\n`);
 
-      catSkills.forEach((skill, i) => {
+      areaSkills.forEach((skill, i) => {
         const prefix = i === currentSkill ? `${colors.green}▶ ` : '  ';
         const suffix = i === currentSkill ? colors.reset : '';
         const featured = skill.featured ? ` ${colors.yellow}★${colors.reset}` : '';
@@ -1280,32 +1353,32 @@ async function browseSkills(agent = 'claude') {
         process.exit(0);
       }
 
-      if (mode === 'category') {
+      if (mode === 'area') {
         if (key.name === 'up') {
-          currentCategory = Math.max(0, currentCategory - 1);
+          currentWorkArea = Math.max(0, currentWorkArea - 1);
         } else if (key.name === 'down') {
-          currentCategory = Math.min(categories.length - 1, currentCategory + 1);
+          currentWorkArea = Math.min(workAreas.length - 1, currentWorkArea + 1);
         } else if (key.name === 'return') {
           mode = 'skill';
           currentSkill = 0;
         }
       } else {
-        const catSkills = getSkillsInCategory(categories[currentCategory]);
+        const areaSkills = getSkillsInArea(workAreas[currentWorkArea]);
         if (key.name === 'up') {
           currentSkill = Math.max(0, currentSkill - 1);
         } else if (key.name === 'down') {
-          currentSkill = Math.min(catSkills.length - 1, currentSkill + 1);
+          currentSkill = Math.min(areaSkills.length - 1, currentSkill + 1);
         } else if (key.name === 'backspace' || key.name === 'escape') {
-          mode = 'category';
+          mode = 'area';
         } else if (key.name === 'return') {
-          const skill = catSkills[currentSkill];
+          const skill = areaSkills[currentSkill];
           console.clear();
           process.stdin.setRawMode(false);
           installSkill(skill.name, agent, false);
           resolve();
           return;
         } else if (str === 'i') {
-          const skill = catSkills[currentSkill];
+          const skill = areaSkills[currentSkill];
           console.clear();
           process.stdin.setRawMode(false);
           showInfo(skill.name);
@@ -1856,6 +1929,7 @@ ${colors.bold}Commands:${colors.reset}
   ${colors.green}browse${colors.reset}                           Interactive skill browser (TUI)
   ${colors.green}list${colors.reset}                             List all available skills
   ${colors.green}list --installed${colors.reset}                 List installed skills for an agent
+  ${colors.green}list --work-area <area>${colors.reset}          Filter by work area
   ${colors.green}list --category <cat>${colors.reset}            Filter by category
   ${colors.green}list --collection <id>${colors.reset}           Filter by curated collection
   ${colors.green}collections${colors.reset}                      Show curated collections
@@ -1879,6 +1953,7 @@ ${colors.bold}Options:${colors.reset}
   ${colors.cyan}--agents <list>${colors.reset}      Target multiple agents (comma-separated)
   ${colors.cyan}--installed${colors.reset}          Show only installed skills (with list)
   ${colors.cyan}--dry-run, -n${colors.reset}        Preview changes without applying
+  ${colors.cyan}--work-area <a>${colors.reset}      Filter by work area
   ${colors.cyan}--category <c>${colors.reset}       Filter by category
   ${colors.cyan}--collection <id>${colors.reset}    Filter by curated collection
   ${colors.cyan}--all${colors.reset}                Apply to all (with update)
@@ -1898,6 +1973,9 @@ ${colors.bold}Agents:${colors.reset} (install targets ALL by default)
   ${colors.cyan}kilocode${colors.reset} ~/.kilocode/skills/
   ${colors.cyan}project${colors.reset}  .skills/ (portable)
 
+${colors.bold}Work Areas:${colors.reset}
+  frontend, backend, mobile, docs, testing, workflow, research, design, business
+
 ${colors.bold}Categories:${colors.reset}
   development, document, creative, business, productivity
 
@@ -1907,13 +1985,10 @@ ${colors.bold}Collections:${colors.reset}
 ${colors.bold}Legacy collection aliases:${colors.reset}
   web-product, mobile-expo, backend-systems, quality-workflows, docs-files
 
-${colors.bold}Support policy:${colors.reset}
-  I stick to the major agents.
-  I am not adding every new coding agent that shows up.
-
 ${colors.bold}Examples:${colors.reset}
   npx ai-agent-skills browse                                # Interactive browser
   npx ai-agent-skills collections                           # Browse curated collections
+  npx ai-agent-skills list --work-area frontend
   npx ai-agent-skills install frontend-design               # Install to ALL agents
   npx ai-agent-skills install pdf --agent cursor            # Install to Cursor only
   npx ai-agent-skills install pdf --agents claude,cursor    # Install to specific agents
@@ -1967,6 +2042,8 @@ ${colors.bold}${skill.name}${colors.reset}${skill.featured ? ` ${colors.yellow}(
 
 ${colors.dim}${skill.description}${colors.reset}
 
+${colors.bold}Work Area:${colors.reset}   ${skill.workArea ? formatWorkAreaTitle(skill.workArea) : 'n/a'}
+${colors.bold}Branch:${colors.reset}      ${skill.branch || 'n/a'}
 ${colors.bold}Category:${colors.reset}    ${skill.category}
 ${colors.bold}Trust:${colors.reset}       ${getTrust(skill)}
 ${colors.bold}Origin:${colors.reset}      ${getOrigin(skill)}
@@ -2033,7 +2110,7 @@ function setConfig(key, value) {
 // ============ MAIN CLI ============
 
 const args = process.argv.slice(2);
-const { command, param, agents, explicitAgent, installed, dryRun, category, collection, tags, all } = parseArgs(args);
+const { command, param, agents, explicitAgent, installed, dryRun, category, workArea, collection, tags, all } = parseArgs(args);
 const ALL_AGENTS = Object.keys(AGENT_PATHS);
 
 // Handle config commands specially
@@ -2070,7 +2147,7 @@ switch (command || 'help') {
         listInstalledSkills(agents[i]);
       }
     } else {
-      listSkills(category, tags, collection);
+      listSkills(category, tags, collection, workArea);
     }
     break;
 
@@ -2141,7 +2218,7 @@ switch (command || 'help') {
       log('Usage: npx ai-agent-skills search <query>');
       process.exit(1);
     }
-    searchSkills(param, category, collection);
+    searchSkills(param, category, collection, workArea);
     break;
 
   case 'info':

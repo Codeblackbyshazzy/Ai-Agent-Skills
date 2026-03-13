@@ -31,14 +31,18 @@ I keep the folder structure simple and let the catalog do the sorting.
 
 - `skills/` holds the actual skill folders
 - `skills.json` is the catalog the CLI reads
-- `collections` are the front shelf
+- `workArea` and `branch` are the main browse fields in the catalog
+- `work areas` are the main browse model
+- `collections` are the shorter CLI shelves
 - `category`, `tags`, `source`, `origin`, `featured`, `verified`, and `trust` help with sorting and trust
 
 I do not want a deep folder tree. That usually makes install tooling worse and the repo harder to maintain.
 
-## Collections
+## Work Areas And Collections
 
-Collections are the cleanest way into the repo, but they are not meant to cover everything.
+The main browse model is work area first, source repo second.
+
+Collections are still useful, but they are not meant to cover everything.
 
 - `my-picks`: the fastest way to understand my taste
 - `build-apps`: web and mobile product work with a high interface bar

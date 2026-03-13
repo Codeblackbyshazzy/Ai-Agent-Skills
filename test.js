@@ -73,7 +73,7 @@ test('skills.json exists and is valid JSON', () => {
 
 test('skills.json has skills with required fields', () => {
   const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'skills.json'), 'utf8'));
-  const required = ['name', 'description', 'category', 'author', 'license', 'source', 'origin', 'trust'];
+  const required = ['name', 'description', 'category', 'workArea', 'branch', 'author', 'license', 'source', 'origin', 'trust'];
 
   data.skills.forEach(skill => {
     required.forEach(field => {
@@ -138,6 +138,26 @@ test('collections metadata is valid', () => {
   });
 });
 
+test('work area metadata is valid', () => {
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'skills.json'), 'utf8'));
+  const workAreas = data.workAreas || [];
+  const ids = new Set(workAreas.map(area => area.id));
+
+  assert(Array.isArray(workAreas), 'workAreas should be an array');
+  assert(workAreas.length > 0, 'workAreas should not be empty');
+
+  workAreas.forEach(area => {
+    assert(area.id, 'work area missing id');
+    assert(area.title, `work area ${area.id} missing title`);
+    assert(area.description, `work area ${area.id} missing description`);
+  });
+
+  data.skills.forEach(skill => {
+    assert(ids.has(skill.workArea), `Skill ${skill.name} has invalid workArea ${skill.workArea}`);
+    assert(typeof skill.branch === 'string' && skill.branch.trim(), `Skill ${skill.name} missing branch`);
+  });
+});
+
 // ============ CLI TESTS ============
 
 test('help command works', () => {
@@ -151,7 +171,7 @@ test('help command works', () => {
 test('list command works', () => {
   const output = run('list');
   assertContains(output, 'Available Skills');
-  assertContains(output, 'DEVELOPMENT');
+  assertContains(output, 'FRONTEND');
 });
 
 test('collections command works', () => {
@@ -169,6 +189,8 @@ test('search command works', () => {
 test('info command works', () => {
   const output = run('info pdf');
   assertContains(output, 'pdf');
+  assertContains(output, 'Work Area:');
+  assertContains(output, 'Branch:');
   assertContains(output, 'Category:');
   assertContains(output, 'Trust:');
   assertContains(output, 'Source Repo:');
@@ -241,7 +263,13 @@ test('unknown command shows error', () => {
 
 test('category filter works', () => {
   const output = run('list --category document');
-  assertContains(output, 'DOCUMENT');
+  assertContains(output, 'DOCS');
+});
+
+test('work area filter works', () => {
+  const output = run('list --work-area testing');
+  assertContains(output, 'TESTING');
+  assertContains(output, 'qa-regression');
 });
 
 test('collection filter works', () => {
