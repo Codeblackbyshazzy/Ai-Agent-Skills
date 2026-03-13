@@ -48,16 +48,14 @@ body:
     id: collection
     attributes:
       label: Closest collection
-      description: Which collection should this belong to first?
+      description: If this deserves a top-level shelf, which one is the closest fit?
       options:
         - My Picks
-        - Web Product
-        - Mobile Expo
-        - Backend Systems
-        - Quality Workflows
-        - Docs Files
-        - Business Research
-        - Creative Media
+        - Build Apps
+        - Build Systems
+        - Test and Debug
+        - Docs and Research
+        - No top-level collection
         - Not sure
 
   - type: textarea

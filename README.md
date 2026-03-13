@@ -60,35 +60,33 @@ By default, `install` targets the major agents I already support: Claude Code, C
 
 ## How I Organize It
 
-- `Collections` are the main way to browse this repo.
+- `Collections` are the first place I would tell someone to browse.
 - `My Picks` is where I would tell most people to start.
 - `Featured` means I would actively point someone to that skill first.
 - `Verified` means I have personally checked the skill and its metadata.
-- `Categories` and `tags` are there to keep the CLI useful, not to overcomplicate the repo.
+- `Categories`, `tags`, and search cover everything that does not need a top-level shelf.
 
 The folder layout stays flat under `skills/<name>/` because installs stay simpler that way. The catalog handles the grouping.
 
 ## Collections
 
-These collections are the best way to browse the repo.
+Start here. They are the front shelf, not the whole catalog.
 
 | Collection | What it's for | Start with |
 |-------|-------------|-------------|
 | `my-picks` | The first skills I would install on a fresh setup | `frontend-design`, `mcp-builder`, `qa-regression` |
-| `web-product` | Frontend work, design systems, polished UI, and shipping web apps | `react-best-practices`, `frontend-design`, `vercel-deploy` |
-| `mobile-expo` | Expo and React Native workflows | `expo-app-design`, `expo-deployment`, `upgrading-expo` |
-| `backend-systems` | APIs, architecture, MCP servers, and heavier engineering work | `mcp-builder`, `backend-development`, `database-design` |
-| `quality-workflows` | Testing, review, planning, QA, and safer execution | `qa-regression`, `code-review`, `best-practices` |
-| `docs-files` | Documents, spreadsheets, coauthoring, file-heavy work | `pdf`, `doc-coauthoring`, `xlsx` |
-| `business-research` | Growth, lead research, communication, and operator workflows | `lead-research-assistant`, `internal-comms`, `developer-growth-analysis` |
-| `creative-media` | Visual work, image/video tasks, and creative output | `canvas-design`, `image-enhancer`, `video-downloader` |
+| `build-apps` | Web and mobile product work with a high interface bar | `frontend-design`, `react-best-practices`, `expo-app-design` |
+| `build-systems` | Backend, architecture, MCP, and deeper engineering work | `mcp-builder`, `backend-development`, `database-design` |
+| `test-and-debug` | Review, QA, debugging, and cleanup work | `qa-regression`, `code-review`, `webapp-testing` |
+| `docs-and-research` | Docs, files, research, and execution support | `pdf`, `doc-coauthoring`, `code-documentation` |
 
 CLI shortcuts:
 
 ```bash
 npx ai-agent-skills collections
 npx ai-agent-skills list --collection my-picks
-npx ai-agent-skills list --collection web-product
+npx ai-agent-skills list --collection build-apps
+npx ai-agent-skills search expo
 ```
 
 ## What I Support
@@ -160,7 +158,7 @@ Before opening a PR:
 1. Read [CURATION.md](./CURATION.md).
 2. Follow [CONTRIBUTING.md](./CONTRIBUTING.md).
 3. Add or update the `skills.json` entry.
-4. Place the skill in at least one curated collection.
+4. Put the skill on a top-level shelf only if it clearly belongs there.
 5. Explain why it belongs here.
 
 ## What Are Agent Skills?

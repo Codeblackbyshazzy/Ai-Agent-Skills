@@ -20,33 +20,25 @@
       ]
     },
     {
-      "id": "web-product",
-      "title": "Web Product & Design",
-      "description": "Frontend implementation, interface quality, and shipping polished web products.",
+      "id": "build-apps",
+      "title": "Build Apps",
+      "description": "The core skills for building web and mobile products with a strong interface bar.",
       "skills": [
         "react-best-practices",
         "web-design-guidelines",
         "vercel-deploy",
+        "expo-app-design",
+        "expo-deployment",
+        "upgrading-expo",
         "frontend-design",
         "artifacts-builder",
-        "brand-guidelines",
         "theme-factory"
       ]
     },
     {
-      "id": "mobile-expo",
-      "title": "Mobile & Expo",
-      "description": "Expo and React Native workflows for designing, upgrading, and shipping mobile apps.",
-      "skills": [
-        "expo-app-design",
-        "expo-deployment",
-        "upgrading-expo"
-      ]
-    },
-    {
-      "id": "backend-systems",
-      "title": "Backend & Systems",
-      "description": "Architecture, APIs, MCP servers, app logic, and codebase-level engineering work.",
+      "id": "build-systems",
+      "title": "Build Systems",
+      "description": "The skills I reach for when the work is backend, architectural, or deeper in the codebase.",
       "skills": [
         "mcp-builder",
         "backend-development",
@@ -59,9 +51,9 @@
       ]
     },
     {
-      "id": "quality-workflows",
-      "title": "Quality & Workflow",
-      "description": "Testing, review, planning, QA, and safer day-to-day execution loops.",
+      "id": "test-and-debug",
+      "title": "Test & Debug",
+      "description": "The skills for review, QA, debugging, and keeping real work from getting sloppy.",
       "skills": [
         "code-review",
         "webapp-testing",
@@ -73,9 +65,9 @@
       ]
     },
     {
-      "id": "docs-files",
-      "title": "Docs, Files & Research",
-      "description": "Documents, spreadsheets, coauthoring, analysis, and file-heavy workflows.",
+      "id": "docs-and-research",
+      "title": "Docs & Research",
+      "description": "The skills for documents, file-heavy work, and research that actually helps execution.",
       "skills": [
         "pdf",
         "xlsx",
@@ -87,33 +79,6 @@
         "file-organizer",
         "invoice-organizer",
         "meeting-insights-analyzer"
-      ]
-    },
-    {
-      "id": "business-research",
-      "title": "Business & Research",
-      "description": "Communication, growth, lead research, and business-side operator workflows.",
-      "skills": [
-        "competitive-ads-extractor",
-        "lead-research-assistant",
-        "domain-name-brainstormer",
-        "internal-comms",
-        "developer-growth-analysis",
-        "job-application",
-        "raffle-winner-picker"
-      ]
-    },
-    {
-      "id": "creative-media",
-      "title": "Creative & Media",
-      "description": "Visual work, image/video tasks, and creative output beyond straight coding.",
-      "skills": [
-        "canvas-design",
-        "algorithmic-art",
-        "image-enhancer",
-        "slack-gif-creator",
-        "theme-factory",
-        "video-downloader"
       ]
     }
   ],

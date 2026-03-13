@@ -31,7 +31,7 @@ If your skill is fine but does not really add much to the library, I would rathe
 1. Fork the repo.
 2. Add the skill folder at `skills/<skill-name>/`.
 3. Add or update the `skills.json` entry.
-4. Put the skill in at least one collection.
+4. Put the skill in a collection only if it clearly belongs on one of the main shelves.
 5. Run `node test.js`.
 6. Open a PR with a short explanation of why it belongs.
 
@@ -47,18 +47,15 @@ Use one of these:
 
 ## Collections
 
-Most skills should fit into at least one of these:
+These are the top-level shelves:
 
 - `my-picks`
-- `web-product`
-- `mobile-expo`
-- `backend-systems`
-- `quality-workflows`
-- `docs-files`
-- `business-research`
-- `creative-media`
+- `build-apps`
+- `build-systems`
+- `test-and-debug`
+- `docs-and-research`
 
-If none of those fit, explain why.
+Not every skill needs to land in one of them. If it is better surfaced through tags and search, say that in the PR.
 
 ## Review Bar
 
@@ -76,7 +73,7 @@ If you are improving a skill that is already here:
 
 1. Keep attribution intact unless ownership has clearly changed.
 2. Explain what you changed and why it is better.
-3. Say whether it should move collections, become featured, or become verified.
+3. Say whether it belongs on a top-level shelf, should become featured, or should become verified.
 
 ## Questions
 

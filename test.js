@@ -141,7 +141,7 @@ test('collections command works', () => {
   const output = run('collections');
   assertContains(output, 'Curated Collections');
   assertContains(output, 'My Picks');
-  assertContains(output, 'my-picks');
+  assertContains(output, 'build-apps');
 });
 
 test('search command works', () => {
@@ -223,9 +223,26 @@ test('category filter works', () => {
 });
 
 test('collection filter works', () => {
-  const output = run('list --collection my-picks');
-  assertContains(output, 'My Picks');
+  const output = run('list --collection build-apps');
+  assertContains(output, 'Build Apps');
   assertContains(output, 'frontend-design');
+});
+
+test('legacy collection alias works', () => {
+  const output = run('list --collection web-product');
+  assertContains(output, 'now maps to "build-apps"');
+  assertContains(output, 'Build Apps');
+});
+
+test('retired collection shows guidance', () => {
+  const output = run('list --collection creative-media');
+  assertContains(output, 'no longer a top-level collection');
+});
+
+test('uncurated skill info shows no collections', () => {
+  const output = run('info internal-comms');
+  assertContains(output, 'Collections:');
+  assertContains(output, 'none');
 });
 
 // ============ SECURITY TESTS ============

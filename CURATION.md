@@ -30,23 +30,22 @@ I keep the folder structure simple and let the catalog do the sorting.
 
 - `skills/` holds the actual skill folders
 - `skills.json` is the catalog the CLI reads
-- `collections` are the main browsing layer
+- `collections` are the front shelf
 - `category`, `tags`, `featured`, and `verified` help with sorting and trust
 
 I do not want a deep folder tree. That usually makes install tooling worse and the repo harder to maintain.
 
 ## Collections
 
-Collections are how I want people to browse the repo:
+Collections are the cleanest way into the repo, but they are not meant to cover everything.
 
 - `my-picks`: the fastest way to understand my taste
-- `web-product`: frontend, design systems, and web shipping work
-- `mobile-expo`: Expo and React Native workflows
-- `backend-systems`: APIs, architecture, MCP, and heavier engineering work
-- `quality-workflows`: testing, review, QA, and planning
-- `docs-files`: documents, spreadsheets, coauthoring, and file-heavy work
-- `business-research`: communication, research, growth, and operator tasks
-- `creative-media`: visual and media-oriented work
+- `build-apps`: web and mobile product work with a high interface bar
+- `build-systems`: backend, architecture, MCP, and deeper engineering work
+- `test-and-debug`: review, QA, debugging, and cleanup work
+- `docs-and-research`: docs, files, research, and execution support
+
+Not every skill needs a collection. If something is useful but off to the side, search and tags can do the job.
 
 ## Featured And Verified
 
@@ -70,7 +69,7 @@ When I add or update a skill, I try to answer these questions:
 1. Is this actually good?
 2. Does it belong here?
 3. What is the right category?
-4. Which collection should it live in?
+4. Does it deserve a top-level shelf, or should it stay tag-driven?
 5. Is it good enough to feature?
 6. Have I checked enough to verify it?
 7. Is the attribution clean?
@@ -80,8 +79,8 @@ When I add or update a skill, I try to answer these questions:
 The repo already has the shape for that.
 
 - home page: `my-picks`
-- browse page: collections first, categories second
-- skill page: source, tags, collections, install command
+- browse page: collections first, tags and search second
+- skill page: source, tags, collections when relevant, install command
 - trust layer: featured and verified
 
 The repo should stay where the data lives. A site can just present it better.

@@ -16,20 +16,18 @@ Explain why this is worth keeping in this repo.
 ## Collection Fit
 
 - [ ] `my-picks`
-- [ ] `web-product`
-- [ ] `mobile-expo`
-- [ ] `backend-systems`
-- [ ] `quality-workflows`
-- [ ] `docs-files`
-- [ ] `business-research`
-- [ ] `creative-media`
+- [ ] `build-apps`
+- [ ] `build-systems`
+- [ ] `test-and-debug`
+- [ ] `docs-and-research`
+- [ ] No top-level collection
 
 ## Checklist
 
 - [ ] SKILL.md has valid YAML frontmatter with `name` and `description`
 - [ ] Skill name is lowercase with hyphens only
 - [ ] Added entry to `skills.json`
-- [ ] Added the skill to at least one collection
+- [ ] Added the skill to a collection if it clearly belongs on one
 - [ ] Tested the skill works as expected
 - [ ] Ran `node test.js`
 

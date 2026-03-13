@@ -43,6 +43,37 @@ const colors = {
   magenta: '\x1b[35m'
 };
 
+const LEGACY_COLLECTION_ALIASES = {
+  'web-product': {
+    targetId: 'build-apps',
+    message: 'Collection "web-product" now maps to "build-apps".'
+  },
+  'mobile-expo': {
+    targetId: 'build-apps',
+    message: 'Collection "mobile-expo" now maps to "build-apps". Use tags like "expo" when you want the mobile slice.'
+  },
+  'backend-systems': {
+    targetId: 'build-systems',
+    message: 'Collection "backend-systems" now maps to "build-systems".'
+  },
+  'quality-workflows': {
+    targetId: 'test-and-debug',
+    message: 'Collection "quality-workflows" now maps to "test-and-debug".'
+  },
+  'docs-files': {
+    targetId: 'docs-and-research',
+    message: 'Collection "docs-files" now maps to "docs-and-research".'
+  },
+  'business-research': {
+    targetId: null,
+    message: 'Collection "business-research" is no longer a top-level collection. Use search or tags for those skills.'
+  },
+  'creative-media': {
+    targetId: null,
+    message: 'Collection "creative-media" is no longer a top-level collection. Use search or tags for those skills.'
+  }
+};
+
 function log(msg) { console.log(msg); }
 function success(msg) { console.log(`${colors.green}${colors.bold}${msg}${colors.reset}`); }
 function info(msg) { console.log(`${colors.cyan}${msg}${colors.reset}`); }
@@ -170,6 +201,63 @@ function getCollection(data, collectionId) {
   return getCollections(data).find(collection => collection.id === collectionId);
 }
 
+function resolveCollection(data, collectionId) {
+  if (!collectionId) {
+    return {
+      collection: null,
+      message: null,
+      unknown: false,
+      retired: false
+    };
+  }
+
+  const exact = getCollection(data, collectionId);
+  if (exact) {
+    return {
+      collection: exact,
+      message: null,
+      unknown: false,
+      retired: false
+    };
+  }
+
+  const alias = LEGACY_COLLECTION_ALIASES[collectionId];
+  if (!alias) {
+    return {
+      collection: null,
+      message: `Unknown collection "${collectionId}"`,
+      unknown: true,
+      retired: false
+    };
+  }
+
+  if (!alias.targetId) {
+    return {
+      collection: null,
+      message: alias.message,
+      unknown: false,
+      retired: true
+    };
+  }
+
+  const mapped = getCollection(data, alias.targetId);
+  if (!mapped) {
+    return {
+      collection: null,
+      message: `Collection "${collectionId}" now maps to "${alias.targetId}", but that collection is missing from skills.json.`,
+      unknown: true,
+      retired: false
+    };
+  }
+
+  return {
+    collection: mapped,
+    message: alias.message,
+    unknown: false,
+    retired: false
+  };
+}
+
 function getCollectionsForSkill(data, skillName) {
   return getCollections(data).filter(collection =>
     Array.isArray(collection.skills) && collection.skills.includes(skillName)
@@ -178,20 +266,32 @@ function getCollectionsForSkill(data, skillName) {
 
 function filterSkillsByCollection(data, skills, collectionId) {
   if (!collectionId) {
-    return { collection: null, skills };
+    return { collection: null, skills, message: null, unknown: false, retired: false };
   }
 
-  const collection = getCollection(data, collectionId);
-  if (!collection) {
-    return { collection: null, skills: null };
+  const resolution = resolveCollection(data, collectionId);
+  if (!resolution.collection) {
+    return {
+      collection: null,
+      skills: null,
+      message: resolution.message,
+      unknown: resolution.unknown,
+      retired: resolution.retired
+    };
   }
 
-  const order = new Map(collection.skills.map((name, index) => [name, index]));
+  const order = new Map(resolution.collection.skills.map((name, index) => [name, index]));
   const filtered = skills
     .filter(skill => order.has(skill.name))
     .sort((a, b) => order.get(a.name) - order.get(b.name));
 
-  return { collection, skills: filtered };
+  return {
+    collection: resolution.collection,
+    skills: filtered,
+    message: resolution.message,
+    unknown: false,
+    retired: false
+  };
 }
 
 function printCollectionSuggestions(data) {
@@ -888,9 +988,14 @@ function listSkills(category = null, tags = null, collectionId = null) {
 
   const collectionResult = filterSkillsByCollection(data, skills, collectionId);
   if (collectionId && !collectionResult.collection) {
-    warn(`Unknown collection "${collectionId}"`);
-    printCollectionSuggestions(data);
+    warn(collectionResult.message);
+    if (collectionResult.unknown) {
+      printCollectionSuggestions(data);
+    }
     return;
+  }
+  if (collectionResult.message) {
+    info(collectionResult.message);
   }
   skills = collectionResult.skills;
 
@@ -971,9 +1076,14 @@ function searchSkills(query, category = null, collectionId = null) {
 
   const collectionResult = filterSkillsByCollection(data, skills, collectionId);
   if (collectionId && !collectionResult.collection) {
-    warn(`Unknown collection "${collectionId}"`);
-    printCollectionSuggestions(data);
+    warn(collectionResult.message);
+    if (collectionResult.unknown) {
+      printCollectionSuggestions(data);
+    }
     return;
+  }
+  if (collectionResult.message) {
+    info(collectionResult.message);
   }
   skills = collectionResult.skills;
 
@@ -1033,6 +1143,7 @@ function showCollections() {
   }
 
   log(`\n${colors.bold}Curated Collections${colors.reset} (${collections.length} total)\n`);
+  log(`${colors.dim}These are the main shelves. Search and tags cover the rest.${colors.reset}\n`);
 
   collections.forEach(collection => {
     const sample = collection.skills.slice(0, 4).join(', ');
@@ -1762,8 +1873,10 @@ ${colors.bold}Categories:${colors.reset}
   development, document, creative, business, productivity
 
 ${colors.bold}Collections:${colors.reset}
-  my-picks, web-product, mobile-expo, backend-systems
-  quality-workflows, docs-files, business-research, creative-media
+  my-picks, build-apps, build-systems, test-and-debug, docs-and-research
+
+${colors.bold}Legacy collection aliases:${colors.reset}
+  web-product, mobile-expo, backend-systems, quality-workflows, docs-files
 
 ${colors.bold}Support policy:${colors.reset}
   I stick to the major agents.
@@ -1781,6 +1894,7 @@ ${colors.bold}Examples:${colors.reset}
   npx ai-agent-skills install pdf --dry-run                 # Preview install
   npx ai-agent-skills list --category development
   npx ai-agent-skills list --collection my-picks
+  npx ai-agent-skills list --collection build-apps
   npx ai-agent-skills search testing
   npx ai-agent-skills update --all
 
