@@ -29,13 +29,13 @@
 
 I launched this on December 17, 2025, the day after Agent Skills became an open standard, and before `skills.sh` launched on January 14, 2026.
 
-I built it as a universal installer. That part still works, but it is not the center of the project anymore.
+I built it as a universal installer. That still works, but it is not the center of the project anymore.
 
-If you just want the default universal installer, `skills.sh` is the obvious choice now.
+If you just want the default universal installer, use `skills.sh`.
 
-This repo is the library itself. It holds the skills I actually use, adapt, or recommend. Some are mine. Some come from other open-source repos. If something feels weak, repetitive, or too niche, I leave it out.
+This repo is my library of agent skills: the ones I use, adapt, or recommend.
 
-I am not chasing every new coding agent either. I care about the major ones people actually use. I would rather support a smaller set well than add every new logo that shows up.
+I only support the major agents.
 
 ## Quick Start
 
