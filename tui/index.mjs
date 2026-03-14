@@ -6,12 +6,38 @@ import TextInput from 'ink-text-input';
 import htm from 'htm';
 
 const require = createRequire(import.meta.url);
-const {buildCatalog} = require('./catalog.cjs');
+const {buildCatalog, getSkillsInstallSpec} = require('./catalog.cjs');
 
 const html = htm.bind(React.createElement);
 
+const COLORS = {
+  accent: 'yellowBright',
+  accentSoft: 'yellow',
+  text: 'white',
+  muted: 'gray',
+  border: 'gray',
+};
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function fitText(text, maxLength) {
+  const value = String(text || '');
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1)}…`;
+}
+
+function shellQuote(value) {
+  const stringValue = String(value);
+  if (/^[a-zA-Z0-9._:/=@-]+$/.test(stringValue)) {
+    return stringValue;
+  }
+  return `'${stringValue.replace(/'/g, `'\\''`)}'`;
+}
+
+function commandLabel(parts) {
+  return parts.map(shellQuote).join(' ');
 }
 
 function stripFrontmatter(markdown) {
@@ -21,7 +47,7 @@ function stripFrontmatter(markdown) {
   return markdown.slice(secondFence + 5).trim();
 }
 
-function excerpt(markdown, lines = 20) {
+function excerpt(markdown, lines = 12) {
   return stripFrontmatter(markdown)
     .split('\n')
     .slice(0, lines)
@@ -29,255 +55,462 @@ function excerpt(markdown, lines = 20) {
     .trim();
 }
 
-function fitText(text, maxLength) {
-  if (!text) return '';
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength - 1)}…`;
+function getColumnsPerRow(columns, mode = 'default') {
+  if (mode === 'skills') {
+    if (columns >= 150) return 3;
+    if (columns >= 108) return 2;
+    return 1;
+  }
+
+  if (columns >= 150) return 4;
+  if (columns >= 108) return 3;
+  if (columns >= 72) return 2;
+  return 1;
 }
 
-function skillInstallCommand(skillName, agent) {
-  return `npx ai-agent-skills install ${skillName} --agent ${agent}`;
+function moveGrid(index, key, itemCount, columnsPerRow) {
+  if (itemCount === 0) return 0;
+  if (key.upArrow) return clamp(index - columnsPerRow, 0, itemCount - 1);
+  if (key.downArrow) return clamp(index + columnsPerRow, 0, itemCount - 1);
+  if (key.leftArrow) return clamp(index - 1, 0, itemCount - 1);
+  if (key.rightArrow) return clamp(index + 1, 0, itemCount - 1);
+  return index;
 }
 
-function ListPanel({title, subtitle, items, selectedIndex}) {
+function Header({breadcrumbs, title, subtitle, hint}) {
   return html`
-    <${Box} flexDirection="column" width=${34} paddingRight=${1}>
-      <${Box} borderStyle="round" borderColor="yellow" flexDirection="column" paddingX=${1} paddingY=${0}>
-        <${Text} color="yellowBright">${title}<//>
-        ${subtitle ? html`<${Text} color="gray">${subtitle}<//>` : null}
-      <//>
-      <${Box} flexDirection="column" marginTop=${1}>
-        ${items.map((item, index) => {
-          const selected = index === selectedIndex;
-          return html`
-            <${Box}
-              key=${item.id || item.title}
-              borderStyle="round"
-              borderColor=${selected ? 'yellowBright' : 'gray'}
-              paddingX=${1}
-              paddingY=${0}
-              marginBottom=${1}
-              flexDirection="column"
-            >
-              <${Text} bold=${selected} color=${selected ? 'white' : 'gray'}>
-                ${selected ? '› ' : '  '}${item.title}
-              <//>
-              ${item.meta ? html`<${Text} color="gray">${item.meta}<//>` : null}
-            <//>
-          `;
-        })}
-      <//>
+    <${Box} flexDirection="column" marginBottom=${1}>
+      <${Text} color=${COLORS.accentSoft}>AI Agent Skills<//>
+      ${breadcrumbs && breadcrumbs.length > 0
+        ? html`<${Text} color=${COLORS.muted}>${breadcrumbs.join(' › ')}<//>`
+        : null}
+      <${Text} bold color=${COLORS.text}>${title}<//>
+      ${subtitle ? html`<${Text} color=${COLORS.muted}>${subtitle}<//>` : null}
+      ${hint ? html`<${Text} color=${COLORS.muted}>${hint}<//>` : null}
     <//>
   `;
 }
 
-function DetailCard({title, eyebrow, children}) {
+function ModeTabs({rootMode}) {
   return html`
-    <${Box} borderStyle="round" borderColor="gray" flexDirection="column" paddingX=${1} paddingY=${0} marginBottom=${1}>
-      ${eyebrow ? html`<${Text} color="yellow">${eyebrow}<//>` : null}
-      <${Text} bold color="white">${title}<//>
-      <${Box} marginTop=${1} flexDirection="column">${children}<//>
+    <${Box} marginBottom=${1}>
+      ${[
+        {id: 'areas', label: 'Work Areas (w)'},
+        {id: 'sources', label: 'Source Repos (r)'},
+      ].map((tab) => {
+        const selected = tab.id === rootMode;
+        return html`
+          <${Box}
+            key=${tab.id}
+            borderStyle="round"
+            borderColor=${selected ? COLORS.accent : COLORS.border}
+            paddingX=${1}
+            marginRight=${1}
+          >
+            <${Text} color=${selected ? COLORS.text : COLORS.muted}>${tab.label}<//>
+          <//>
+        `;
+      })}
     <//>
   `;
 }
 
-function renderChips(values) {
-  if (!values || values.length === 0) return html`<${Text} color="gray">none<//>`;
+function MetricLine({items}) {
   return html`
-    <${Box} flexWrap="wrap">
-      ${values.slice(0, 4).map((value, index) => html`
-        <${Box}
-          key=${`${value}-${index}`}
-          borderStyle="round"
-          borderColor="gray"
-          paddingX=${1}
-          marginRight=${1}
-          marginBottom=${1}
-        >
-          <${Text} color="gray">${value}<//>
+    <${Box}>
+      ${items.map((item, index) => html`
+        <${Box} key=${`${item}-${index}`} marginRight=${index < items.length - 1 ? 2 : 0}>
+          <${Text} color=${COLORS.muted}>${item}<//>
         <//>
       `)}
     <//>
   `;
 }
 
-function WorkMap({areas, selectedIndex, columns}) {
-  const cardsPerRow = columns >= 150 ? 4 : columns >= 110 ? 3 : columns >= 72 ? 2 : 1;
-  const cardWidth = Math.max(28, Math.floor((columns - (cardsPerRow - 1) * 2) / cardsPerRow));
+function ChipRow({items, selected}) {
+  if (!items || items.length === 0) return null;
 
   return html`
-    <${Box} flexWrap="wrap">
-      ${areas.map((area, index) => {
-        const selected = index === selectedIndex;
-        return html`
-          <${Box}
-            key=${area.id}
-            width=${cardWidth}
-            minHeight=${11}
-            marginRight=${1}
-            marginBottom=${1}
-            borderStyle="round"
-            borderColor=${selected ? 'yellowBright' : 'gray'}
-            paddingX=${1}
-            paddingY=${0}
-            flexDirection="column"
-          >
-            <${Box} justifyContent="space-between">
-              <${Text} bold=${selected} color=${selected ? 'white' : 'gray'}>${area.title}<//>
-              <${Text} color=${selected ? 'yellowBright' : 'gray'}>${area.skillCount} skills<//>
-            <//>
-            <${Box} marginTop=${1} flexDirection="column">
-              <${Text} color="gray">${fitText(area.description, Math.max(28, cardWidth - 4))}<//>
-            <//>
-            <${Box} marginTop=${1} flexWrap="wrap">
-              ${area.branches.slice(0, 3).map((branch) => html`
-                <${Box}
-                  key=${branch.id}
-                  borderStyle="round"
-                  borderColor="gray"
-                  paddingX=${1}
-                  marginRight=${1}
-                  marginBottom=${1}
-                >
-                  <${Text} color="gray">${branch.title}<//>
-                <//>
-              `)}
-            <//>
-            <${Box} marginTop="auto" justifyContent="space-between">
-              <${Text} color="gray">${area.repoCount} repos · ${area.branches.length} branches<//>
-              <${Text} color=${selected ? 'yellowBright' : 'gray'}>${selected ? 'Enter to open' : 'Open'}<//>
-            <//>
-          <//>
-        `;
-      })}
+    <${Box} flexWrap="wrap" marginTop=${1}>
+      ${items.map((item) => html`
+        <${Box}
+          key=${item}
+          borderStyle="round"
+          borderColor=${selected ? COLORS.accentSoft : COLORS.border}
+          paddingX=${1}
+          marginRight=${1}
+          marginBottom=${1}
+        >
+          <${Text} color=${selected ? COLORS.text : COLORS.muted}>${item}<//>
+        <//>
+      `)}
     <//>
   `;
 }
 
-function SourceGrid({sources, selectedIndex, columns}) {
-  const cardsPerRow = columns >= 150 ? 4 : columns >= 110 ? 3 : columns >= 72 ? 2 : 1;
-  const cardWidth = Math.max(28, Math.floor((columns - (cardsPerRow - 1) * 2) / cardsPerRow));
-
+function AtlasTile({
+  width,
+  minHeight = 9,
+  selected,
+  title,
+  count,
+  description,
+  chips,
+  footerLeft,
+  footerRight,
+  sampleLines,
+}) {
   return html`
-    <${Box} flexWrap="wrap">
-      ${sources.map((source, index) => {
-        const selected = index === selectedIndex;
-        return html`
-          <${Box}
-            key=${source.slug}
-            width=${cardWidth}
-            minHeight=${9}
-            marginRight=${1}
-            marginBottom=${1}
-            borderStyle="round"
-            borderColor=${selected ? 'yellowBright' : 'gray'}
-            paddingX=${1}
-            paddingY=${0}
-            flexDirection="column"
-          >
-            <${Text} bold=${selected} color=${selected ? 'white' : 'gray'}>${source.title}<//>
-            <${Text} color="gray">${source.slug}<//>
-            <${Box} marginTop=${1} justifyContent="space-between">
-              <${Text} color="gray">${source.skillCount} skills<//>
-              <${Text} color="gray">${source.branchCount} branches<//>
+    <${Box}
+      width=${width}
+      minHeight=${minHeight}
+      marginRight=${1}
+      marginBottom=${1}
+      borderStyle="round"
+      borderColor=${selected ? COLORS.accent : COLORS.border}
+      paddingX=${1}
+      paddingY=${0}
+      flexDirection="column"
+    >
+      <${Box} justifyContent="space-between">
+        <${Text} bold=${selected} color=${selected ? COLORS.text : COLORS.muted}>
+          ${title}
+        <//>
+        ${count ? html`<${Text} color=${selected ? COLORS.accent : COLORS.muted}>${count}<//>` : null}
+      <//>
+
+      ${description
+        ? html`
+            <${Box} marginTop=${1}>
+              <${Text} color=${selected ? COLORS.text : COLORS.muted}>
+                ${selected ? description : fitText(description, Math.max(20, width - 8))}
+              <//>
             <//>
-            <${Box} marginTop=${1} flexWrap="wrap">
-              ${source.branches.slice(0, 2).map((branch) => html`
-                <${Box}
-                  key=${branch.id}
-                  borderStyle="round"
-                  borderColor="gray"
-                  paddingX=${1}
-                  marginRight=${1}
-                  marginBottom=${1}
-                >
-                  <${Text} color="gray">${branch.areaTitle} / ${branch.title}<//>
+          `
+        : null}
+
+      ${chips && chips.length > 0 ? html`<${ChipRow} items=${chips} selected=${selected} />` : null}
+
+      ${sampleLines && sampleLines.length > 0
+        ? html`
+            <${Box} marginTop=${1} flexDirection="column">
+              ${sampleLines.map((line, index) => html`
+                <${Text} key=${`${line}-${index}`} color=${selected ? COLORS.text : COLORS.muted}>
+                  ${selected ? '• ' : ''}${line}
                 <//>
               `)}
             <//>
-            <${Box} marginTop="auto" justifyContent="flex-end">
-              <${Text} color=${selected ? 'yellowBright' : 'gray'}>${selected ? 'Enter to open' : 'Open'}<//>
-            <//>
-          <//>
-        `;
-      })}
+          `
+        : null}
+
+      <${Box} marginTop="auto" justifyContent="space-between">
+        <${Text} color=${COLORS.muted}>${footerLeft || ''}<//>
+        <${Text} color=${selected ? COLORS.accent : COLORS.muted}>${footerRight || ''}<//>
+      <//>
+    <//>
+  `;
+}
+
+function AtlasGrid({items, selectedIndex, columns, mode = 'default'}) {
+  const columnsPerRow = getColumnsPerRow(columns, mode);
+  const gutter = columnsPerRow > 1 ? columnsPerRow - 1 : 0;
+  const tileWidth = Math.max(
+    mode === 'skills' ? 32 : 28,
+    Math.floor((columns - gutter * 2) / columnsPerRow)
+  );
+
+  return html`
+    <${Box} flexWrap="wrap">
+      ${items.map((item, index) => html`
+        <${AtlasTile}
+          key=${item.id}
+          width=${tileWidth}
+          minHeight=${item.minHeight || (mode === 'skills' ? 10 : 11)}
+          selected=${index === selectedIndex}
+          title=${item.title}
+          count=${item.count}
+          description=${item.description}
+          chips=${item.chips}
+          footerLeft=${item.footerLeft}
+          footerRight=${item.footerRight}
+          sampleLines=${item.sampleLines}
+        />
+      `)}
     <//>
   `;
 }
 
 function SearchOverlay({query, setQuery, results, selectedIndex}) {
   return html`
-    <${Box} borderStyle="round" borderColor="yellowBright" flexDirection="column" paddingX=${1} paddingY=${0} marginBottom=${1}>
-      <${Text} color="yellowBright">Search the library<//>
+    <${Box} borderStyle="round" borderColor=${COLORS.accent} flexDirection="column" paddingX=${1} paddingY=${0} marginBottom=${1}>
+      <${Text} color=${COLORS.accent}>Search the atlas<//>
       <${Box} marginTop=${1}>
-        <${Text} color="gray">/ <//>
+        <${Text} color=${COLORS.muted}>/ <//>
         <${TextInput} value=${query} onChange=${setQuery} placeholder="skills, work areas, branches, repos" />
       <//>
       <${Box} marginTop=${1} flexDirection="column">
         ${results.length === 0
-          ? html`<${Text} color="gray">No matches yet.<//>`
-          : results.slice(0, 8).map((result, index) => {
-              const selected = index === selectedIndex;
-              return html`
-                <${Box} key=${result.name} marginBottom=${1}>
-                  <${Text} color=${selected ? 'yellowBright' : 'gray'}>
-                    ${selected ? '› ' : '  '}${result.title} · ${result.workAreaTitle} / ${result.branchTitle} · ${result.sourceTitle}
-                  <//>
+          ? html`<${Text} color=${COLORS.muted}>No matches yet.<//>`
+          : results.slice(0, 8).map((result, index) => html`
+              <${Box} key=${result.name} marginBottom=${1}>
+                <${Text} color=${index === selectedIndex ? COLORS.accent : COLORS.muted}>
+                  ${index === selectedIndex ? '› ' : '  '}${result.title} · ${result.workAreaTitle} / ${result.branchTitle} · ${result.sourceTitle}
                 <//>
-              `;
-            })}
+              <//>
+            `)}
+      <//>
+      <${Box} marginTop=${1}>
+        <${Text} color=${COLORS.muted}>Enter opens a skill · Esc closes search<//>
       <//>
     <//>
   `;
 }
 
-function SkillSummary({skill, previewMode, agent}) {
-  const previewText = excerpt(skill.markdown, 18)
-    .split('\n')
-    .slice(0, 18)
-    .join('\n');
+function Inspector({title, eyebrow, lines, command, footer}) {
+  return html`
+    <${Box} borderStyle="round" borderColor=${COLORS.border} flexDirection="column" paddingX=${1} paddingY=${0} marginTop=${1}>
+      ${eyebrow ? html`<${Text} color=${COLORS.accentSoft}>${eyebrow}<//>` : null}
+      <${Text} bold color=${COLORS.text}>${title}<//>
+      <${Box} marginTop=${1} flexDirection="column">
+        ${lines.map((line, index) => html`<${Text} key=${index} color=${COLORS.muted}>${line}<//>`)}
+      <//>
+      ${command
+        ? html`
+            <${Box} marginTop=${1}>
+              <${Text} color=${COLORS.text}>${command}<//>
+            <//>
+          `
+        : null}
+      ${footer ? html`<${Box} marginTop=${1}><${Text} color=${COLORS.muted}>${footer}<//><//>` : null}
+    <//>
+  `;
+}
+
+function SkillScreen({skill, previewMode, agent, columns}) {
+  const previewText = excerpt(skill.markdown, 12);
+  const installCommand = `npx ai-agent-skills install ${skill.name} --agent ${agent}`;
+  const detailWidth = clamp(columns - 2, 46, 96);
 
   return html`
     <${Box} flexDirection="column">
-      <${DetailCard} title=${skill.title} eyebrow=${`${skill.workAreaTitle} / ${skill.branchTitle}`}>
-        <${Text} color="gray">${skill.description}<//>
-        <${Box} marginTop=${1} flexDirection="column">
-          <${Text} color="gray">Source: ${skill.sourceTitle}<//>
-          <${Text} color="gray">Trust: ${skill.trust} · Sync: ${skill.syncMode}<//>
-          <${Text} color="gray">Origin: ${skill.origin}${skill.lastVerified ? ` · Verified ${skill.lastVerified}` : ''}<//>
-        <//>
+      <${AtlasTile}
+        width=${detailWidth}
+        minHeight=${10}
+        selected=${true}
+        title=${skill.title}
+        count=${skill.trust}
+        description=${skill.description}
+        chips=${[skill.sourceTitle, `${skill.workAreaTitle} / ${skill.branchTitle}`]}
+        footerLeft=${`sync ${skill.syncMode}${skill.lastVerified ? ` · verified ${skill.lastVerified}` : ''}`}
+        footerRight="i install"
+        sampleLines=${[skill.whyHere]}
+      />
+      <${Inspector}
+        title=${previewMode ? 'Preview' : 'Install path'}
+        eyebrow=${previewMode ? 'Bundled SKILL.md excerpt' : 'Vendored install command'}
+        lines=${previewMode ? previewText.split('\n') : [`Source repo: ${skill.source}`, `Source URL: ${skill.sourceUrl}`, `Origin: ${skill.origin}`]}
+        command=${previewMode ? null : installCommand}
+        footer=${previewMode ? 'Press p to close preview · i for install choices · o to open upstream' : 'Press p to preview · i for install choices · o to open upstream'}
+      />
+    <//>
+  `;
+}
+
+function InstallChooser({skill, agent, selectedIndex, columns}) {
+  const skillsSpec = getSkillsInstallSpec(skill, agent);
+  const chooserWidth = clamp(columns - 2, 46, 104);
+  const options = [
+    {
+      id: 'local',
+      label: 'Install with ai-agent-skills',
+      description: 'Use the vendored library copy; stable and deterministic.',
+      command: `npx ai-agent-skills install ${skill.name} --agent ${agent}`,
+    },
+    ...(skillsSpec
+      ? [{
+          id: 'skills',
+          label: 'Install with skills.sh',
+          description: 'Use the official open skills CLI against the upstream mirror.',
+          command: skillsSpec.command,
+        }]
+      : []),
+    {
+      id: 'open',
+      label: 'Open upstream',
+      description: 'Open the upstream source in the browser.',
+      command: skill.sourceUrl,
+    },
+    {
+      id: 'cancel',
+      label: 'Cancel',
+      description: 'Close the chooser and stay on this skill.',
+      command: '',
+    },
+  ];
+
+  const selected = options[selectedIndex] || options[0];
+
+  return html`
+    <${Box}
+      width=${chooserWidth}
+      marginTop=${1}
+      borderStyle="round"
+      borderColor=${COLORS.accent}
+      flexDirection="column"
+      paddingX=${1}
+      paddingY=${0}
+    >
+      <${Text} color=${COLORS.accent}>Install ${skill.title}<//>
+      <${Box} marginTop=${1} flexDirection="column">
+        ${options.map((option, index) => html`
+          <${Box}
+            key=${option.id}
+            borderStyle="round"
+            borderColor=${index === selectedIndex ? COLORS.accent : COLORS.border}
+            paddingX=${1}
+            marginBottom=${1}
+            flexDirection="column"
+          >
+            <${Text} color=${index === selectedIndex ? COLORS.text : COLORS.muted}>
+              ${index === selectedIndex ? '› ' : '  '}${option.label}
+            <//>
+            <${Text} color=${COLORS.muted}>${option.description}<//>
+          <//>
+        `)}
       <//>
-      <${DetailCard} title="Why it is here">
-        <${Text} color="gray">${skill.whyHere}<//>
-      <//>
-      <${DetailCard} title=${previewMode ? 'Preview' : 'Install'} eyebrow=${previewMode ? 'Rendered from SKILL.md' : 'Vendored install path'}>
-        ${previewMode
-          ? html`<${Text} color="gray">${previewText}<//>`
-          : html`
-              <${Text} color="gray">${skillInstallCommand(skill.name, agent)}<//>
-              <${Box} marginTop=${1} flexDirection="column">
-                <${Text} color="gray">Press i to install this skill.<//>
-                <${Text} color="gray">Press p to toggle preview.<//>
-              <//>
-            `}
-      <//>
-      <${DetailCard} title="Collections and tags">
-        ${renderChips([...skill.collections, ...(skill.tags || []).slice(0, 3)])}
+      ${selected.command
+        ? html`
+            <${Box} marginTop=${1}>
+              <${Text} color=${COLORS.muted}>${selected.command}<//>
+            <//>
+          `
+        : null}
+      <${Box} marginTop=${1}>
+        <${Text} color=${COLORS.muted}>Enter chooses · Esc closes the chooser<//>
       <//>
     <//>
   `;
+}
+
+function buildBreadcrumbs(rootMode, stack, catalog) {
+  const trail = ['Atlas', rootMode === 'areas' ? 'Work Areas' : 'Source Repos'];
+
+  for (const entry of stack.slice(1)) {
+    if (entry.type === 'area') {
+      const area = catalog.areas.find((candidate) => candidate.id === entry.areaId);
+      if (area) trail.push(area.title);
+      continue;
+    }
+
+    if (entry.type === 'branch') {
+      const area = catalog.areas.find((candidate) => candidate.id === entry.areaId);
+      const branch = area?.branches.find((candidate) => candidate.id === entry.branchId);
+      if (area && trail[trail.length - 1] !== area.title) {
+        trail.push(area.title);
+      }
+      if (branch) trail.push(branch.title);
+      continue;
+    }
+
+    if (entry.type === 'source') {
+      const source = catalog.sources.find((candidate) => candidate.slug === entry.sourceSlug);
+      if (source) trail.push(source.title);
+      continue;
+    }
+
+    if (entry.type === 'sourceBranch') {
+      const source = catalog.sources.find((candidate) => candidate.slug === entry.sourceSlug);
+      const branch = source?.branches.find((candidate) => candidate.id === entry.branchId);
+      if (source && trail[trail.length - 1] !== source.title) {
+        trail.push(source.title);
+      }
+      if (branch) trail.push(branch.title);
+      continue;
+    }
+
+    if (entry.type === 'skill') {
+      const skill = catalog.skills.find((candidate) => candidate.name === entry.skillName);
+      if (skill) trail.push(skill.title);
+    }
+  }
+
+  return trail.filter((value, index) => index === 0 || value !== trail[index - 1]);
+}
+
+function getHomeItems(catalog) {
+  return catalog.areas.map((area) => ({
+    id: area.id,
+    title: area.title,
+    count: `${area.skillCount} skills`,
+    description: area.description,
+    chips: area.branches.slice(0, 2).map((branch) => branch.title),
+    footerLeft: `${area.repoCount} repos · ${area.branches.length} branches`,
+    footerRight: 'Enter to open',
+  }));
+}
+
+function getSourceItems(catalog) {
+  return catalog.sources.map((source) => ({
+    id: source.slug,
+    title: source.title,
+    count: `${source.skillCount} skills`,
+    description: source.slug,
+    chips: source.branches.slice(0, 2).map((branch) => `${branch.areaTitle} / ${branch.title}`),
+    footerLeft: `${source.branchCount} branches · ${source.areaCount} areas`,
+    footerRight: 'Enter to open',
+  }));
+}
+
+function getAreaItems(area) {
+  return area.branches.map((branch) => ({
+    id: branch.id,
+    title: branch.title,
+    count: `${branch.skillCount} skills`,
+    description: `This lane covers ${branch.repoCount} source repos inside ${area.title.toLowerCase()}.`,
+    chips: branch.repoTitles.slice(0, 2),
+    sampleLines: branch.skills.slice(0, 2).map((skill) => `${skill.title} · ${skill.sourceTitle}`),
+    footerLeft: `${branch.repoCount} repos`,
+    footerRight: 'Enter to open',
+  }));
+}
+
+function getSourceBranchItems(source) {
+  return source.branches.map((branch) => ({
+    id: branch.id,
+    title: `${branch.areaTitle} / ${branch.title}`,
+    count: `${branch.skillCount} skills`,
+    description: `${source.title} contributes this branch into the atlas.`,
+    sampleLines: branch.skills.slice(0, 2).map((skill) => skill.title),
+    footerLeft: `${branch.skillCount} skills`,
+    footerRight: 'Enter to open',
+  }));
+}
+
+function getSkillItems(skills) {
+  return skills.map((skill) => ({
+    id: skill.name,
+    title: skill.title,
+    count: skill.trust,
+    description: skill.description,
+    chips: [skill.sourceTitle, skill.syncMode],
+    footerLeft: `${skill.workAreaTitle} / ${skill.branchTitle}`,
+    footerRight: 'Enter to inspect',
+  }));
 }
 
 function App({catalog, agent, onExit}) {
   const {exit} = useApp();
   const {stdout} = useStdout();
   const columns = stdout?.columns || process.stdout.columns || 120;
+
   const [rootMode, setRootMode] = useState('areas');
   const [stack, setStack] = useState([{type: 'home'}]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchMode, setSearchMode] = useState(false);
   const [query, setQuery] = useState('');
   const [previewMode, setPreviewMode] = useState(false);
+  const [chooserOpen, setChooserOpen] = useState(false);
+  const [chooserIndex, setChooserIndex] = useState(0);
 
   const current = stack[stack.length - 1];
 
@@ -309,72 +542,100 @@ function App({catalog, agent, onExit}) {
     ? catalog.skills.find((skill) => skill.name === current.skillName)
     : null;
 
-  const activeList = (() => {
-    if (searchMode) {
-      return searchResults.map((skill) => ({
-        id: skill.name,
-        title: skill.title,
-        meta: `${skill.workAreaTitle} / ${skill.branchTitle} · ${skill.sourceTitle}`,
-      }));
-    }
+  const breadcrumbs = buildBreadcrumbs(rootMode, stack, catalog);
+  const currentSkillsSpec = currentSkill ? getSkillsInstallSpec(currentSkill, agent) : null;
 
-    if (current.type === 'home') {
-      const items = rootMode === 'areas'
-        ? catalog.areas.map((area) => ({id: area.id, title: area.title}))
-        : catalog.sources.map((source) => ({id: source.slug, title: source.title}));
-      return items;
-    }
-
-    if (current.type === 'area' && currentArea) {
-      return currentArea.branches.map((branch) => ({
-        id: branch.id,
-        title: branch.title,
-        meta: `${branch.skillCount} skills · ${branch.repoCount} repos`,
-      }));
-    }
-
-    if (current.type === 'branch' && currentBranch) {
-      return currentBranch.skills.map((skill) => ({
-        id: skill.name,
-        title: skill.title,
-        meta: `${skill.sourceTitle} · ${skill.trust}`,
-      }));
-    }
-
-    if (current.type === 'source' && currentSource) {
-      return currentSource.branches.map((branch) => ({
-        id: branch.id,
-        title: `${branch.areaTitle} / ${branch.title}`,
-        meta: `${branch.skillCount} skills`,
-      }));
-    }
-
-    if (current.type === 'sourceBranch' && currentSourceBranch) {
-      return currentSourceBranch.skills.map((skill) => ({
-        id: skill.name,
-        title: skill.title,
-        meta: `${skill.workAreaTitle} · ${skill.trust}`,
-      }));
-    }
-
-    return [];
-  })();
+  const installOptions = currentSkill
+    ? [
+        {
+          id: 'local',
+          action: {
+            type: 'install',
+            skillName: currentSkill.name,
+          },
+        },
+        ...(currentSkillsSpec
+          ? [{
+              id: 'skills',
+              action: {
+                type: 'skills-install',
+                skillName: currentSkill.name,
+                command: currentSkillsSpec.command,
+                binary: currentSkillsSpec.binary,
+                args: currentSkillsSpec.args,
+              },
+            }]
+          : []),
+        {id: 'open', action: {type: 'open-upstream', url: currentSkill.sourceUrl}},
+        {id: 'cancel', action: null},
+      ]
+    : [];
 
   useInput((input, key) => {
+    if (chooserOpen && currentSkill) {
+      if (input === 'q') {
+        onExit(null);
+        exit();
+        return;
+      }
+
+      if (key.escape || input === 'b') {
+        setChooserOpen(false);
+        setChooserIndex(0);
+        return;
+      }
+
+      if (key.upArrow || input === 'k') {
+        setChooserIndex((value) => clamp(value - 1, 0, installOptions.length - 1));
+        return;
+      }
+
+      if (key.downArrow || input === 'j') {
+        setChooserIndex((value) => clamp(value + 1, 0, installOptions.length - 1));
+        return;
+      }
+
+      if (key.return) {
+        const option = installOptions[chooserIndex];
+        if (!option || option.id === 'cancel') {
+          setChooserOpen(false);
+          setChooserIndex(0);
+          return;
+        }
+
+        if (option.id === 'open') {
+          spawnSync('open', [currentSkill.sourceUrl], {stdio: 'ignore'});
+          setChooserOpen(false);
+          setChooserIndex(0);
+          return;
+        }
+
+        onExit(option.action);
+        exit();
+      }
+      return;
+    }
+
     if (searchMode) {
       if (key.escape) {
         setSearchMode(false);
         setQuery('');
         setSelectedIndex(0);
-      } else if (key.upArrow) {
-        setSelectedIndex((currentIndex) => clamp(currentIndex - 1, 0, Math.max(0, searchResults.length - 1)));
-      } else if (key.downArrow) {
-        setSelectedIndex((currentIndex) => clamp(currentIndex + 1, 0, Math.max(0, searchResults.length - 1)));
-      } else if (key.return && searchResults[selectedIndex]) {
+        return;
+      }
+      if (key.upArrow) {
+        setSelectedIndex((value) => clamp(value - 1, 0, Math.max(0, searchResults.length - 1)));
+        return;
+      }
+      if (key.downArrow) {
+        setSelectedIndex((value) => clamp(value + 1, 0, Math.max(0, searchResults.length - 1)));
+        return;
+      }
+      if (key.return && searchResults[selectedIndex]) {
         setStack((currentStack) => [...currentStack, {type: 'skill', skillName: searchResults[selectedIndex].name}]);
-        setSelectedIndex(0);
         setSearchMode(false);
         setQuery('');
+        setSelectedIndex(0);
         setPreviewMode(false);
       }
       return;
@@ -397,6 +658,7 @@ function App({catalog, agent, onExit}) {
       setStack((currentStack) => currentStack.slice(0, -1));
       setSelectedIndex(0);
       setPreviewMode(false);
+      setChooserOpen(false);
       return;
     }
 
@@ -405,63 +667,34 @@ function App({catalog, agent, onExit}) {
         setPreviewMode((value) => !value);
         return;
       }
-
       if (input === 'i') {
-        onExit({type: 'install', skillName: currentSkill.name});
-        exit();
+        setChooserOpen(true);
+        setChooserIndex(0);
         return;
       }
-
       if (input === 'o') {
-        const target = currentSkill.sourceUrl || `https://github.com/${currentSkill.source}`;
-        spawnSync('open', [target], {stdio: 'ignore'});
+        spawnSync('open', [currentSkill.sourceUrl], {stdio: 'ignore'});
         return;
       }
     }
 
     if (current.type === 'home') {
       const itemCount = rootMode === 'areas' ? catalog.areas.length : catalog.sources.length;
-      const columnsPerRow = columns >= 150 ? 4 : columns >= 110 ? 3 : columns >= 72 ? 2 : 1;
+      const columnsPerRow = getColumnsPerRow(columns);
 
-      if (key.leftArrow) {
-        if (selectedIndex > 0) {
-          setSelectedIndex((value) => value - 1);
-        } else {
-          setRootMode((value) => (value === 'areas' ? 'sources' : 'areas'));
-          setSelectedIndex(0);
-        }
+      if (input === 'w') {
+        setRootMode('areas');
+        setSelectedIndex(0);
         return;
       }
-
-      if (key.rightArrow) {
-        if (selectedIndex < itemCount - 1) {
-          setSelectedIndex((value) => value + 1);
-        } else {
-          setRootMode((value) => (value === 'areas' ? 'sources' : 'areas'));
-          setSelectedIndex(0);
-        }
-        return;
-      }
-
-      if (key.upArrow) {
-        setSelectedIndex((value) => clamp(value - columnsPerRow, 0, itemCount - 1));
-        return;
-      }
-
-      if (key.downArrow) {
-        setSelectedIndex((value) => clamp(value + columnsPerRow, 0, itemCount - 1));
-        return;
-      }
-
       if (input === 'r') {
         setRootMode('sources');
         setSelectedIndex(0);
         return;
       }
 
-      if (input === 'w') {
-        setRootMode('areas');
-        setSelectedIndex(0);
+      if (key.leftArrow || key.rightArrow || key.upArrow || key.downArrow) {
+        setSelectedIndex((value) => moveGrid(value, key, itemCount, columnsPerRow));
         return;
       }
 
@@ -476,209 +709,212 @@ function App({catalog, agent, onExit}) {
       return;
     }
 
-    if (key.upArrow || input === 'k') {
-      setSelectedIndex((value) => clamp(value - 1, 0, Math.max(0, activeList.length - 1)));
-      return;
-    }
+    const currentItems = (() => {
+      if (current.type === 'area' && currentArea) return currentArea.branches;
+      if (current.type === 'source' && currentSource) return currentSource.branches;
+      if (current.type === 'branch' && currentBranch) return currentBranch.skills;
+      if (current.type === 'sourceBranch' && currentSourceBranch) return currentSourceBranch.skills;
+      return [];
+    })();
 
-    if (key.downArrow || input === 'j') {
-      setSelectedIndex((value) => clamp(value + 1, 0, Math.max(0, activeList.length - 1)));
+    const gridMode = current.type === 'branch' || current.type === 'sourceBranch' ? 'skills' : 'default';
+    const columnsPerRow = getColumnsPerRow(columns, gridMode);
+
+    if (key.leftArrow || key.rightArrow || key.upArrow || key.downArrow) {
+      setSelectedIndex((value) => moveGrid(value, key, currentItems.length, columnsPerRow));
       return;
     }
 
     if (!key.return) return;
 
     if (current.type === 'area' && currentArea && currentArea.branches[selectedIndex]) {
-      setStack((currentStack) => [
-        ...currentStack,
-        {type: 'branch', areaId: currentArea.id, branchId: currentArea.branches[selectedIndex].id},
-      ]);
+      setStack((currentStack) => [...currentStack, {type: 'branch', areaId: currentArea.id, branchId: currentArea.branches[selectedIndex].id}]);
+      setSelectedIndex(0);
+      return;
+    }
+
+    if (current.type === 'source' && currentSource && currentSource.branches[selectedIndex]) {
+      setStack((currentStack) => [...currentStack, {type: 'sourceBranch', sourceSlug: currentSource.slug, branchId: currentSource.branches[selectedIndex].id}]);
       setSelectedIndex(0);
       return;
     }
 
     if (current.type === 'branch' && currentBranch && currentBranch.skills[selectedIndex]) {
-      setStack((currentStack) => [
-        ...currentStack,
-        {type: 'skill', skillName: currentBranch.skills[selectedIndex].name},
-      ]);
+      setStack((currentStack) => [...currentStack, {type: 'skill', skillName: currentBranch.skills[selectedIndex].name}]);
       setSelectedIndex(0);
       setPreviewMode(false);
-      return;
-    }
-
-    if (current.type === 'source' && currentSource && currentSource.branches[selectedIndex]) {
-      setStack((currentStack) => [
-        ...currentStack,
-        {type: 'sourceBranch', sourceSlug: currentSource.slug, branchId: currentSource.branches[selectedIndex].id},
-      ]);
-      setSelectedIndex(0);
       return;
     }
 
     if (current.type === 'sourceBranch' && currentSourceBranch && currentSourceBranch.skills[selectedIndex]) {
-      setStack((currentStack) => [
-        ...currentStack,
-        {type: 'skill', skillName: currentSourceBranch.skills[selectedIndex].name},
-      ]);
+      setStack((currentStack) => [...currentStack, {type: 'skill', skillName: currentSourceBranch.skills[selectedIndex].name}]);
       setSelectedIndex(0);
       setPreviewMode(false);
     }
   });
-
-  const hero = html`
-    <${Box} flexDirection="column" marginBottom=${1}>
-      <${Text} color="yellowBright">AI Agent Skills<//>
-      <${Text} bold color="white">Curated agent skills in the terminal<//>
-      <${Text} color="gray">Work areas first. Source repos second. Vendored installs stay stable.<//>
-    <//>
-  `;
-
-  const tabs = html`
-    <${Box} marginBottom=${1}>
-      <${Box} borderStyle="round" borderColor=${rootMode === 'areas' ? 'yellowBright' : 'gray'} paddingX=${1} marginRight=${1}>
-        <${Text} color=${rootMode === 'areas' ? 'white' : 'gray'}>Work Areas (w)<//>
-      <//>
-      <${Box} borderStyle="round" borderColor=${rootMode === 'sources' ? 'yellowBright' : 'gray'} paddingX=${1}>
-        <${Text} color=${rootMode === 'sources' ? 'white' : 'gray'}>Source Repos (r)<//>
-      <//>
-    <//>
-  `;
 
   let body = null;
 
   if (searchMode) {
     body = html`
       <${Box} flexDirection="column">
+        <${Header}
+          breadcrumbs=${breadcrumbs}
+          title="Search the library"
+          subtitle="Find skills by work area, branch, source repo, or title."
+          hint="Enter opens a skill · Esc closes search"
+        />
         <${SearchOverlay}
           query=${query}
           setQuery=${setQuery}
           results=${searchResults}
           selectedIndex=${selectedIndex}
         />
-        <${Text} color="gray">Enter opens a skill. Esc closes search.<//>
       <//>
     `;
   } else if (current.type === 'home') {
     body = html`
       <${Box} flexDirection="column">
-        ${tabs}
-        ${rootMode === 'areas'
-          ? html`<${WorkMap} areas=${catalog.areas} selectedIndex=${selectedIndex} columns=${columns} />`
-          : html`<${SourceGrid} sources=${catalog.sources} selectedIndex=${selectedIndex} columns=${columns} />`}
+        <${Header}
+          breadcrumbs=${breadcrumbs}
+          title="Move through the atlas"
+          subtitle=${rootMode === 'areas'
+            ? 'Start with the kind of work, then move into branches and skills.'
+            : 'Browse trusted source repos and the lanes they feed into the library.'}
+          hint="Arrow keys move · Enter drills in · / searches"
+        />
+        <${ModeTabs} rootMode=${rootMode} />
+        <${AtlasGrid}
+          items=${rootMode === 'areas' ? getHomeItems(catalog) : getSourceItems(catalog)}
+          selectedIndex=${selectedIndex}
+          columns=${columns}
+        />
       <//>
     `;
   } else if (current.type === 'area' && currentArea) {
-    const branch = currentArea.branches[selectedIndex] || currentArea.branches[0];
     body = html`
-      <${Box}>
-        <${ListPanel}
+      <${Box} flexDirection="column">
+        <${Header}
+          breadcrumbs=${breadcrumbs}
           title=${currentArea.title}
-          subtitle=${`${currentArea.skillCount} skills · ${currentArea.repoCount} repos`}
-          items=${currentArea.branches.map((item) => ({
-            id: item.id,
-            title: item.title,
-            meta: `${item.skillCount} skills · ${item.repoCount} repos`,
-          }))}
-          selectedIndex=${selectedIndex}
+          subtitle=${currentArea.description}
+          hint="Arrow keys move across lanes · Enter opens a branch · b goes back"
         />
-        <${Box} flexDirection="column" flexGrow=${1}>
-          <${DetailCard} title=${branch.title} eyebrow=${currentArea.title}>
-            <${Text} color="gray">${currentArea.description}<//>
-            <${Box} marginTop=${1} flexDirection="column">
-              <${Text} color="gray">${branch.skillCount} skills · ${branch.repoCount} repos<//>
-              <${Text} color="gray">Sources: ${branch.repoTitles.join(', ')}<//>
-            <//>
-          <//>
-          <${DetailCard} title="Sample skills">
-            ${branch.skills.slice(0, 4).map((skill) => html`<${Text} key=${skill.name} color="gray">• ${skill.title} · ${skill.sourceTitle}<//>`)}
-          <//>
-        <//>
-      <//>
-    `;
-  } else if (current.type === 'branch' && currentArea && currentBranch) {
-    const skill = currentBranch.skills[selectedIndex] || currentBranch.skills[0];
-    body = html`
-      <${Box}>
-        <${ListPanel}
-          title=${`${currentArea.title} / ${currentBranch.title}`}
-          subtitle=${`${currentBranch.skillCount} skills`}
-          items=${currentBranch.skills.map((item) => ({
-            id: item.name,
-            title: item.title,
-            meta: `${item.sourceTitle} · ${item.trust}`,
-          }))}
-          selectedIndex=${selectedIndex}
-        />
-        <${Box} flexDirection="column" flexGrow=${1}>
-          <${SkillSummary} skill=${skill} previewMode=${false} agent=${agent} />
+        <${MetricLine} items=${[`${currentArea.skillCount} skills`, `${currentArea.branches.length} branches`, `${currentArea.repoCount} repos`]} />
+        <${Box} marginTop=${1}>
+          <${AtlasGrid}
+            items=${getAreaItems(currentArea)}
+            selectedIndex=${selectedIndex}
+            columns=${columns}
+          />
         <//>
       <//>
     `;
   } else if (current.type === 'source' && currentSource) {
-    const branch = currentSource.branches[selectedIndex] || currentSource.branches[0];
     body = html`
-      <${Box}>
-        <${ListPanel}
+      <${Box} flexDirection="column">
+        <${Header}
+          breadcrumbs=${breadcrumbs}
           title=${currentSource.title}
-          subtitle=${`${currentSource.skillCount} skills · ${currentSource.branchCount} branches`}
-          items=${currentSource.branches.map((item) => ({
-            id: item.id,
-            title: `${item.areaTitle} / ${item.title}`,
-            meta: `${item.skillCount} skills`,
-          }))}
-          selectedIndex=${selectedIndex}
+          subtitle="A source view of the atlas: what this repo actually contributes."
+          hint="Arrow keys move across lanes · Enter opens a branch · b goes back"
         />
-        <${Box} flexDirection="column" flexGrow=${1}>
-          <${DetailCard} title=${branch.title} eyebrow=${branch.areaTitle}>
-            <${Text} color="gray">${currentSource.title} feeds this lane of the library.<//>
-            <${Box} marginTop=${1} flexDirection="column">
-              <${Text} color="gray">${branch.skillCount} skills<//>
-              <${Text} color="gray">Mirrorable: ${currentSource.mirrorCount} · Snapshots: ${currentSource.snapshotCount}<//>
-            <//>
-          <//>
-          <${DetailCard} title="Sample skills">
-            ${branch.skills.slice(0, 4).map((skill) => html`<${Text} key=${skill.name} color="gray">• ${skill.title}<//>`)}
-          <//>
+        <${MetricLine} items=${[`${currentSource.skillCount} skills`, `${currentSource.branchCount} branches`, `${currentSource.mirrorCount} mirrors`, `${currentSource.snapshotCount} snapshots`]} />
+        <${Box} marginTop=${1}>
+          <${AtlasGrid}
+            items=${getSourceBranchItems(currentSource)}
+            selectedIndex=${selectedIndex}
+            columns=${columns}
+          />
         <//>
       <//>
     `;
-  } else if (current.type === 'sourceBranch' && currentSource && currentSourceBranch) {
-    const skill = currentSourceBranch.skills[selectedIndex] || currentSourceBranch.skills[0];
+  } else if (current.type === 'branch' && currentArea && currentBranch) {
+    const selectedSkill = currentBranch.skills[selectedIndex] || currentBranch.skills[0];
     body = html`
-      <${Box}>
-        <${ListPanel}
-          title=${`${currentSource.title} / ${currentSourceBranch.title}`}
-          subtitle=${`${currentSourceBranch.skillCount} skills`}
-          items=${currentSourceBranch.skills.map((item) => ({
-            id: item.name,
-            title: item.title,
-            meta: `${item.workAreaTitle} · ${item.trust}`,
-          }))}
-          selectedIndex=${selectedIndex}
+      <${Box} flexDirection="column">
+        <${Header}
+          breadcrumbs=${breadcrumbs}
+          title=${currentBranch.title}
+          subtitle=${`Inside ${currentArea.title.toLowerCase()}, this lane currently carries ${currentBranch.skillCount} skills.`}
+          hint="Arrow keys move across skills · Enter opens a skill · b goes back"
         />
-        <${Box} flexDirection="column" flexGrow=${1}>
-          <${SkillSummary} skill=${skill} previewMode=${false} agent=${agent} />
+        <${MetricLine} items=${[`${currentBranch.skillCount} skills`, `${currentBranch.repoCount} repos`, currentBranch.repoTitles.join(', ')]} />
+        <${Box} marginTop=${1}>
+          <${AtlasGrid}
+            items=${getSkillItems(currentBranch.skills)}
+            selectedIndex=${selectedIndex}
+            columns=${columns}
+            mode="skills"
+          />
         <//>
+        ${selectedSkill
+          ? html`
+              <${Inspector}
+                title=${selectedSkill.title}
+                eyebrow=${`${selectedSkill.sourceTitle} · ${selectedSkill.trust} · ${selectedSkill.syncMode}`}
+                lines=${[selectedSkill.description, selectedSkill.whyHere]}
+                footer="Enter opens the focused skill"
+              />
+            `
+          : null}
+      <//>
+    `;
+  } else if (current.type === 'sourceBranch' && currentSource && currentSourceBranch) {
+    const selectedSkill = currentSourceBranch.skills[selectedIndex] || currentSourceBranch.skills[0];
+    body = html`
+      <${Box} flexDirection="column">
+        <${Header}
+          breadcrumbs=${breadcrumbs}
+          title=${currentSourceBranch.title}
+          subtitle=${`${currentSource.title} feeds this lane into the library.`}
+          hint="Arrow keys move across skills · Enter opens a skill · b goes back"
+        />
+        <${MetricLine} items=${[`${currentSourceBranch.skillCount} skills`, currentSourceBranch.areaTitle, currentSource.title]} />
+        <${Box} marginTop=${1}>
+          <${AtlasGrid}
+            items=${getSkillItems(currentSourceBranch.skills)}
+            selectedIndex=${selectedIndex}
+            columns=${columns}
+            mode="skills"
+          />
+        <//>
+        ${selectedSkill
+          ? html`
+              <${Inspector}
+                title=${selectedSkill.title}
+                eyebrow=${`${selectedSkill.workAreaTitle} / ${selectedSkill.branchTitle}`}
+                lines=${[selectedSkill.description, selectedSkill.whyHere]}
+                footer="Enter opens the focused skill"
+              />
+            `
+          : null}
       <//>
     `;
   } else if (current.type === 'skill' && currentSkill) {
     body = html`
-      <${Box}>
-        <${Box} flexDirection="column" flexGrow=${1}>
-          <${SkillSummary} skill=${currentSkill} previewMode=${previewMode} agent=${agent} />
-        <//>
+      <${Box} flexDirection="column">
+        <${Header}
+          breadcrumbs=${breadcrumbs}
+          title=${currentSkill.title}
+          subtitle=${`${currentSkill.sourceTitle} · ${currentSkill.trust} · ${currentSkill.syncMode}`}
+          hint="i opens install choices · p toggles preview · o opens upstream"
+        />
+        <${SkillScreen} skill=${currentSkill} previewMode=${previewMode} agent=${agent} columns=${columns} />
+        ${chooserOpen
+          ? html`<${InstallChooser} skill=${currentSkill} agent=${agent} selectedIndex=${chooserIndex} columns=${columns} />`
+          : null}
       <//>
     `;
   }
 
   return html`
     <${Box} flexDirection="column">
-      ${hero}
       ${body}
-      <${Box} marginTop=${1} flexDirection="column">
-        <${Text} color="gray">Keys: / search · enter open · b back · i install · p preview · o upstream · q quit<//>
-        <${Text} color="gray">Agent target: ${agent}<//>
+      <${Box} marginTop=${1}>
+        <${Text} color=${COLORS.muted}>
+          / search · Enter open · b back · i install · p preview · o upstream · q quit
+        <//>
       <//>
     <//>
   `;

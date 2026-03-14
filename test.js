@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execSync, execFileSync } = require('child_process');
+const { buildCatalog, getSkillsInstallSpec } = require('./tui/catalog.cjs');
 
 const colors = {
   reset: '\x1b[0m',
@@ -179,6 +180,30 @@ test('work area metadata is valid', () => {
     assert(ids.has(skill.workArea), `Skill ${skill.name} has invalid workArea ${skill.workArea}`);
     assert(typeof skill.branch === 'string' && skill.branch.trim(), `Skill ${skill.name} missing branch`);
   });
+});
+
+test('skills.sh install spec is only created for eligible mirror skills', () => {
+  const catalog = buildCatalog();
+  const mirrorSkill = catalog.skills.find(skill => skill.name === 'figma-implement-design');
+  const snapshotSkill = catalog.skills.find(skill => skill.name === 'frontend-design');
+  const authoredSkill = catalog.skills.find(skill => skill.name === 'qa-regression');
+
+  const mirrorSpec = getSkillsInstallSpec(mirrorSkill, 'codex');
+  assert(mirrorSpec, 'Expected mirror skill to expose a skills.sh install spec');
+  assertContains(mirrorSpec.command, 'skills@1.4.5');
+  assertContains(mirrorSpec.command, 'figma-implement-design');
+  assertContains(mirrorSpec.command, 'codex');
+
+  assertEqual(getSkillsInstallSpec(snapshotSkill, 'codex'), null, 'Snapshot skill should not expose skills.sh install');
+  assertEqual(getSkillsInstallSpec(authoredSkill, 'codex'), null, 'Authored skill should not expose skills.sh install');
+});
+
+test('skills.sh install spec respects supported agent mappings', () => {
+  const catalog = buildCatalog();
+  const mirrorSkill = catalog.skills.find(skill => skill.name === 'figma-implement-design');
+
+  assertEqual(getSkillsInstallSpec(mirrorSkill, 'project'), null, 'Project agent should not expose skills.sh install');
+  assertEqual(getSkillsInstallSpec(mirrorSkill, 'letta'), null, 'Unsupported mapped agent should not expose skills.sh install');
 });
 
 // ============ CLI TESTS ============

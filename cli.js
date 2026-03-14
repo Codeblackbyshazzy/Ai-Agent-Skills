@@ -1295,6 +1295,28 @@ async function launchBrowser(agent = 'claude') {
   return tuiModule.launchTui({ agent });
 }
 
+function runExternalInstallAction(action) {
+  const { spawnSync } = require('child_process');
+
+  if (!action || action.type !== 'skills-install') {
+    return false;
+  }
+
+  const result = spawnSync(action.binary, action.args, {
+    stdio: 'inherit'
+  });
+
+  if (result.status !== 0) {
+    error('skills.sh install failed.');
+    if (action.command) {
+      log(`Retry manually:\n  ${action.command}`);
+    }
+    process.exit(result.status || 1);
+  }
+
+  return true;
+}
+
 // Simple Levenshtein distance for "did you mean" suggestions
 function levenshteinDistance(a, b) {
   if (!a.length) return b.length;
@@ -2070,6 +2092,8 @@ async function main() {
     const action = await launchBrowser(agents[0]);
     if (action && action.type === 'install') {
       installSkill(action.skillName, agents[0], false);
+    } else if (action && action.type === 'skills-install') {
+      runExternalInstallAction(action);
     }
     return;
   }
@@ -2107,6 +2131,8 @@ async function main() {
       const action = await launchBrowser(agents[0]);
       if (action && action.type === 'install') {
         installSkill(action.skillName, agents[0], false);
+      } else if (action && action.type === 'skills-install') {
+        runExternalInstallAction(action);
       }
       return;
     }

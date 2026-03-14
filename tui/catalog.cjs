@@ -4,6 +4,7 @@ const path = require('path');
 const ROOT_DIR = path.join(__dirname, '..');
 const SKILLS_JSON = path.join(ROOT_DIR, 'skills.json');
 const SKILLS_DIR = path.join(ROOT_DIR, 'skills');
+const SKILLS_CLI_VERSION = 'skills@1.4.5';
 
 const SOURCE_TITLES = {
   'MoizIbnYousaf/Ai-Agent-Skills': 'Moiz',
@@ -12,6 +13,19 @@ const SOURCE_TITLES = {
   'openai/skills': 'OpenAI',
   'wshobson/agents': 'wshobson',
   'ComposioHQ/awesome-claude-skills': 'Composio',
+};
+
+const SKILLS_AGENT_MAP = {
+  claude: 'claude-code',
+  cursor: 'cursor',
+  amp: 'amp',
+  vscode: 'github-copilot',
+  copilot: 'github-copilot',
+  codex: 'codex',
+  kilocode: 'kilo',
+  gemini: 'gemini-cli',
+  goose: 'goose',
+  opencode: 'opencode',
 };
 
 const TOKEN_TITLES = {
@@ -66,6 +80,47 @@ function buildSearchText(parts) {
     .toLowerCase();
 }
 
+function shellQuote(value) {
+  const stringValue = String(value);
+  if (/^[a-zA-Z0-9._:/=@-]+$/.test(stringValue)) return stringValue;
+  return `'${stringValue.replace(/'/g, `'\\''`)}'`;
+}
+
+function getSkillsAgent(agent) {
+  return SKILLS_AGENT_MAP[agent] || null;
+}
+
+function getSkillsInstallSpec(skill, agent) {
+  if (!skill || skill.syncMode !== 'mirror' || !skill.sourceUrl) {
+    return null;
+  }
+
+  const mappedAgent = getSkillsAgent(agent);
+  if (!mappedAgent) {
+    return null;
+  }
+
+  const args = [
+    'exec',
+    '--yes',
+    `--package=${SKILLS_CLI_VERSION}`,
+    'skills',
+    '--',
+    'add',
+    skill.sourceUrl,
+    '-a',
+    mappedAgent,
+    '-y',
+  ];
+
+  return {
+    binary: 'npm',
+    args,
+    agent: mappedAgent,
+    command: ['npm', ...args].map(shellQuote).join(' '),
+  };
+}
+
 function buildCatalog() {
   const data = readSkillsJson();
   const collectionLookup = new Map(
@@ -106,6 +161,7 @@ function buildCatalog() {
       workAreaTitle: workArea.title,
       workAreaDescription: workArea.description,
       branchTitle,
+      repoUrl: `https://github.com/${source}`,
       sourceTitle: sourceTitle(source),
       collections: collectionTitlesBySkill.get(skill.name) || [],
       markdown,
@@ -224,5 +280,7 @@ function buildCatalog() {
 
 module.exports = {
   buildCatalog,
+  getSkillsAgent,
+  getSkillsInstallSpec,
   humanizeSlug,
 };
