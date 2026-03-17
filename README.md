@@ -49,6 +49,12 @@ If you only want the default universal installer flow, use `skills.sh`. If you w
 ## Quick Start
 
 ```bash
+
+just start by browsing 
+
+npx ai-agent-skills 
+
+
 # Install one skill to all supported agents
 npx ai-agent-skills install frontend-design
 
