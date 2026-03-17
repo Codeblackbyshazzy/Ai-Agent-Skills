@@ -33,11 +33,11 @@
 
 I launched this on December 17, 2025, the day after Agent Skills became an open standard, and before `skills.sh` launched on January 14, 2026.
 
-I built it as a universal installer. That still works, but it is not the center of the project. 
-
-If you just want the default universal installer now just use `skills.sh`.
-
 This repo is my library of agent skills: the ones I use, adapt, or recommend.
+
+I built it first as a universal installer. That still works, but the center now is curation: work-area organization, source lineage, trust metadata, and stable vendored installs.
+
+If you only want the default universal installer flow, use `skills.sh`. If you want a curated library with explicit provenance, use this repo.
 
 ## What I Built
 
@@ -159,7 +159,7 @@ Some skills track clean upstream mirrors. Others are stable snapshots I keep ven
 | VS Code / Copilot | `--agent vscode` | `.github/skills/` |
 | Gemini CLI | `--agent gemini` | `~/.gemini/skills/` |
 | Goose | `--agent goose` | `~/.config/goose/skills/` |
-| OpenCode | `--agent opencode` | `~/.opencode/skill/` |
+| OpenCode | `--agent opencode` | `~/.config/opencode/skill/` |
 | Letta | `--agent letta` | `~/.letta/skills/` |
 | Kilo Code | `--agent kilocode` | `~/.kilocode/skills/` |
 | Portable | `--agent project` | `.skills/` |

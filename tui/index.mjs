@@ -99,6 +99,9 @@ const SOURCE_NOTES = {
   'wshobson/agents': 'The systems-heavy source for backend, architecture, and deeper engineering coverage.',
 };
 
+const CREATOR_HANDLE = '@moizibnyousaf';
+const LIBRARY_SIGNATURE = 'My Curated Agent Skills Library';
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -138,6 +141,118 @@ function resolveTerminalSize(stdout) {
     || 40;
 
   return {columns, rows};
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
+async function waitForStableTerminalSize(stdout, attempts = 4, intervalMs = 35) {
+  let previous = resolveTerminalSize(stdout);
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    await wait(intervalMs);
+    const next = resolveTerminalSize(stdout);
+    if (next.columns === previous.columns && next.rows === previous.rows) {
+      return next;
+    }
+    previous = next;
+  }
+
+  return previous;
+}
+
+function enterInteractiveScreen(stdout) {
+  if (!stdout?.isTTY) {
+    return () => {};
+  }
+
+  const useAlternateScreen = process.env.TERM !== 'dumb';
+
+  try {
+    if (useAlternateScreen) {
+      stdout.write('\u001B[?1049h');
+    }
+    stdout.write('\u001B[2J\u001B[H');
+  } catch {}
+
+  return () => {
+    try {
+      if (useAlternateScreen) {
+        stdout.write('\u001B[?1049l');
+      } else {
+        stdout.write('\u001B[2J\u001B[H');
+      }
+    } catch {}
+  };
+}
+
+function getViewportProfile({columns, rows}) {
+  const tooSmall = columns < 60 || rows < 18;
+  const micro = !tooSmall && (rows <= 26 || columns < 90);
+  const compact = !tooSmall && !micro && (rows <= 34 || columns < 120);
+  const tier = tooSmall ? 'too-small' : micro ? 'micro' : compact ? 'compact' : 'comfortable';
+
+  return {
+    columns,
+    rows,
+    tier,
+    tooSmall,
+    micro,
+    compact: micro || compact,
+    comfortable: tier === 'comfortable',
+    showWideHero: tier === 'comfortable' && columns >= 138 && rows >= 34,
+    showHeaderBreadcrumbs: !micro,
+    showHeaderHint: tier === 'comfortable',
+    showFooterHint: !micro,
+    showInspector: tier === 'comfortable',
+    maxMetaItems: tier === 'comfortable' ? 6 : compact ? 4 : 3,
+  };
+}
+
+function getReservedRows(screen, viewport, {showInspector = false} = {}) {
+  if (viewport.tooSmall) return 8;
+
+  const base = viewport.micro
+    ? 7
+    : viewport.compact
+      ? 9
+      : 12;
+
+  const screenExtra = (() => {
+    switch (screen) {
+      case 'home-grid':
+        return viewport.compact ? 0 : 1;
+      case 'collection':
+      case 'skill-grid':
+        return viewport.compact ? 2 : 6;
+      case 'detail':
+        return viewport.micro ? 5 : viewport.compact ? 7 : 10;
+      default:
+        return 0;
+    }
+  })();
+
+  const inspectorExtra = showInspector ? (viewport.compact ? 0 : 6) : 0;
+  return base + screenExtra + inspectorExtra;
+}
+
+function getVisibleHomeSectionIndices(sectionCount, activeIndex, viewport) {
+  if (sectionCount <= 0) return [];
+  if (viewport.micro) return [clamp(activeIndex, 0, sectionCount - 1)];
+  if (!viewport.compact) return Array.from({length: sectionCount}, (_, index) => index);
+
+  const active = clamp(activeIndex, 0, sectionCount - 1);
+  const visible = new Set([active]);
+
+  if (active > 0) visible.add(active - 1);
+  if (visible.size < 3 && active < sectionCount - 1) visible.add(active + 1);
+  if (visible.size < 3 && active > 1) visible.add(active - 2);
+  if (visible.size < 3 && active < sectionCount - 2) visible.add(active + 2);
+
+  return Array.from(visible).sort((left, right) => left - right);
 }
 
 function fitText(text, maxLength) {
@@ -203,14 +318,16 @@ function moveGrid(index, key, itemCount, columnsPerRow) {
   return index;
 }
 
-function getViewportState({items, selectedIndex, columns, rows, mode = 'default', reservedRows = 12}) {
+function getViewportState({items, selectedIndex, columns, rows, mode = 'default', compact = false, reservedRows = 12}) {
   const columnsPerRow = getColumnsPerRow(columns, mode);
   const gutter = columnsPerRow > 1 ? columnsPerRow - 1 : 0;
   const tileWidth = Math.max(
     mode === 'skills' ? 32 : 28,
     Math.floor((columns - gutter * 2) / columnsPerRow)
   );
-  const tileHeight = mode === 'skills' ? 11 : 12;
+  const tileHeight = compact
+    ? mode === 'skills' ? 7 : 8
+    : mode === 'skills' ? 11 : 12;
   const usableRows = Math.max(tileHeight, rows - reservedRows);
   const visibleRows = Math.max(1, Math.floor(usableRows / tileHeight));
   const totalRows = Math.max(1, Math.ceil(items.length / columnsPerRow));
@@ -238,27 +355,48 @@ function getViewportState({items, selectedIndex, columns, rows, mode = 'default'
   };
 }
 
-function Header({breadcrumbs, title, subtitle, hint, metaItems = []}) {
+function Header({breadcrumbs, title, subtitle, hint, metaItems = [], viewport = null}) {
+  const compact = Boolean(viewport?.compact);
+  const showBreadcrumbs = viewport ? viewport.showHeaderBreadcrumbs : true;
+  const visibleMetaItems = metaItems.slice(0, viewport?.maxMetaItems || metaItems.length);
+  const compactMeta = visibleMetaItems.join(' · ');
+  const signatureText = viewport?.micro
+    ? 'Curated Agent Skills Library'
+    : viewport?.columns >= 112
+      ? LIBRARY_SIGNATURE
+      : 'Curated Agent Skills Library';
+  const compactSubtitle = subtitle
+    ? compactText(subtitle, Math.max(42, (viewport?.columns || 80) - 6))
+    : '';
+  const compactHint = hint
+    ? compactText(hint, Math.max(40, (viewport?.columns || 80) - 8))
+    : '';
+
   return html`
-    <${Box} flexDirection="column" marginBottom=${1}>
-      <${Box} marginBottom=${1} flexWrap="wrap">
-        <${Box} marginRight=${1} marginBottom=${1}>
+    <${Box} flexDirection="column" marginBottom=${compact ? 0 : 1}>
+      <${Box} marginBottom=${compact ? 0 : 1} flexWrap="wrap">
+        <${Box} marginRight=${1} marginBottom=${compact ? 0 : 1}>
           <${Text} backgroundColor=${COLORS.barMode} color=${COLORS.panelSoft}> AI Agent Skills Atlas <//>
         <//>
-        ${breadcrumbs && breadcrumbs.length > 0
+        <${Box} marginRight=${1} marginBottom=${compact ? 0 : 1}>
+          <${Text} backgroundColor=${COLORS.panelRaised} color=${COLORS.muted}> ${signatureText} <//>
+        <//>
+        ${showBreadcrumbs && breadcrumbs && breadcrumbs.length > 0
           ? html`
-              <${Box} marginBottom=${1}>
-                <${Text} backgroundColor=${COLORS.barContext} color=${COLORS.text}> ${breadcrumbs.join(' › ')} <//>
+              <${Box} marginBottom=${compact ? 0 : 1}>
+                <${Text} backgroundColor=${COLORS.barContext} color=${COLORS.text}>
+                  ${` ${compact ? breadcrumbs[breadcrumbs.length - 1] : breadcrumbs.join(' › ')} `}
+                <//>
               <//>
             `
           : null}
       <//>
       <${Text} bold color=${COLORS.text}>${title}<//>
-      ${subtitle ? html`<${Text} color=${COLORS.muted}>${subtitle}<//>` : null}
-      ${metaItems.length > 0
+      ${compactSubtitle ? html`<${Text} color=${COLORS.muted}>${compactSubtitle}<//>` : null}
+      ${visibleMetaItems.length > 0 && !compact
         ? html`
             <${Box} marginTop=${1} flexWrap="wrap">
-              ${metaItems.map((item, index) => html`
+              ${visibleMetaItems.map((item, index) => html`
                 <${Box}
                   key=${`${item}-${index}`}
                   backgroundColor=${COLORS.panelRaised}
@@ -272,10 +410,17 @@ function Header({breadcrumbs, title, subtitle, hint, metaItems = []}) {
             <//>
           `
         : null}
-      ${hint
+      ${compact && compactMeta
+        ? html`
+            <${Box} marginTop=${1}>
+              <${Text} color=${COLORS.muted}>${compactMeta}<//>
+            <//>
+          `
+        : null}
+      ${hint && (!viewport || viewport.showHeaderHint)
         ? html`
             <${Box} marginTop=${1} backgroundColor=${COLORS.barHint} paddingX=${1}>
-              <${Text} color=${COLORS.muted}>${hint}<//>
+              <${Text} color=${COLORS.muted}>${compact ? compactHint : hint}<//>
             <//>
           `
         : null}
@@ -283,9 +428,9 @@ function Header({breadcrumbs, title, subtitle, hint, metaItems = []}) {
   `;
 }
 
-function ModeTabs({rootMode}) {
+function ModeTabs({rootMode, compact = false}) {
   return html`
-    <${Box} marginBottom=${1} flexWrap="wrap">
+    <${Box} marginBottom=${compact ? 0 : 1} flexWrap="wrap">
       ${[
         {id: 'collections', label: 'Collections (c)'},
         {id: 'areas', label: 'Work Areas (w)'},
@@ -310,19 +455,25 @@ function ModeTabs({rootMode}) {
   `;
 }
 
-function FooterBar({hint, detail = 'Curated library', mode = 'ATLAS', columns = 120}) {
+function FooterBar({hint, detail = 'Curated library', mode = 'ATLAS', columns = 120, viewport = null}) {
   const detailText = compactText(detail, 42);
   const hintText = compactText(hint, Math.max(48, columns - 8));
   return html`
-    <${Box} marginTop=${1} flexDirection="column">
-      <${Box} marginBottom=${1}>
+    <${Box} marginTop=${viewport?.compact ? 0 : 1} flexDirection="column">
+      <${Box} marginBottom=${viewport?.showFooterHint === false ? 0 : 1}>
         <${Text} backgroundColor=${COLORS.barMode} color=${COLORS.panelSoft}> ${mode} <//>
         <${Text}> <//>
         <${Text} backgroundColor=${COLORS.barContext} color=${COLORS.text}> ${detailText} <//>
+        <${Text}> <//>
+        <${Text} backgroundColor=${COLORS.barHint} color=${COLORS.text}> ${CREATOR_HANDLE} <//>
       <//>
-      <${Box} backgroundColor=${COLORS.panelSoft} paddingX=${1}>
-        <${Text} color=${COLORS.muted}>${hintText}<//>
-      <//>
+      ${viewport?.showFooterHint === false
+        ? null
+        : html`
+            <${Box} backgroundColor=${COLORS.panelSoft} paddingX=${1}>
+              <${Text} color=${COLORS.muted}>${hintText}<//>
+            <//>
+          `}
     <//>
   `;
 }
@@ -339,18 +490,18 @@ function MetricLine({items}) {
   `;
 }
 
-function ChipRow({items, selected}) {
+function ChipRow({items, selected, compact = false}) {
   if (!items || items.length === 0) return null;
 
   return html`
-    <${Box} flexWrap="wrap" marginTop=${1}>
+    <${Box} flexWrap="wrap" marginTop=${compact ? 0 : 1}>
       ${items.map((item) => html`
         <${Box}
           key=${item}
           backgroundColor=${selected ? COLORS.chipActiveBg : COLORS.chipBg}
           paddingX=${1}
           marginRight=${1}
-          marginBottom=${1}
+          marginBottom=${compact ? 0 : 1}
         >
           <${Text} color=${selected ? COLORS.text : COLORS.muted}>${item}<//>
         <//>
@@ -372,15 +523,21 @@ function AtlasTile({
   sampleLines,
   compact = false,
 }) {
+  const compactMode = Boolean(compact);
   const descriptionLimit = compact
     ? Math.max(26, width - 10)
     : selected
       ? Math.max(54, width * 2)
       : Math.max(26, width - 8);
   const displayedDescription = description ? compactText(description, descriptionLimit) : '';
+  const visibleChips = compactMode
+    ? (chips || []).slice(0, selected ? 2 : 1)
+    : chips;
   const displayedSamples = sampleLines && sampleLines.length > 0
     ? sampleLines.slice(0, compact ? 1 : selected ? 2 : 1).map((line) => compactText(line, Math.max(24, width - 8)))
     : [];
+  const compactFooterLeft = compactMode ? compactText(footerLeft || '', Math.max(16, width - 20)) : footerLeft;
+  const compactFooterRight = compactMode ? compactText(footerRight || '', Math.max(12, Math.floor(width / 3))) : footerRight;
 
   return html`
     <${Box}
@@ -421,7 +578,7 @@ function AtlasTile({
           `
         : null}
 
-      ${chips && chips.length > 0 ? html`<${ChipRow} items=${chips} selected=${selected} />` : null}
+      ${visibleChips && visibleChips.length > 0 ? html`<${ChipRow} items=${visibleChips} selected=${selected} compact=${compactMode} />` : null}
 
       ${displayedSamples.length > 0
         ? html`
@@ -436,20 +593,21 @@ function AtlasTile({
         : null}
 
       <${Box} marginTop="auto" justifyContent="space-between">
-        <${Text} color=${COLORS.muted}>${footerLeft || ''}<//>
-        <${Text} color=${selected ? COLORS.accent : COLORS.muted}>${footerRight || ''}<//>
+        <${Text} color=${COLORS.muted}>${compactFooterLeft || ''}<//>
+        <${Text} color=${selected ? COLORS.accent : COLORS.muted}>${compactFooterRight || ''}<//>
       <//>
     <//>
   `;
 }
 
-function AtlasGrid({items, selectedIndex, columns, rows, mode = 'default', reservedRows = 12}) {
+function AtlasGrid({items, selectedIndex, columns, rows, mode = 'default', reservedRows = 12, compact = false}) {
   const viewport = getViewportState({
     items,
     selectedIndex,
     columns,
     rows,
     mode,
+    compact,
     reservedRows,
   });
 
@@ -476,6 +634,7 @@ function AtlasGrid({items, selectedIndex, columns, rows, mode = 'default', reser
             footerLeft=${item.footerLeft}
             footerRight=${item.footerRight}
             sampleLines=${item.sampleLines}
+            compact=${compact}
           />
         `)}
       <//>
@@ -490,8 +649,10 @@ function AtlasGrid({items, selectedIndex, columns, rows, mode = 'default', reser
   `;
 }
 
-function getStripState({items, selectedIndex, columns, mode = 'default'}) {
-  const visibleCount = columns >= 160 ? 4 : columns >= 118 ? 3 : 2;
+function getStripState({items, selectedIndex, columns, mode = 'default', compact = false, forceVisibleCount = null}) {
+  const visibleCount = forceVisibleCount || (compact
+    ? columns >= 120 ? 2 : 1
+    : columns >= 160 ? 4 : columns >= 118 ? 3 : 2);
   const gutter = visibleCount > 1 ? visibleCount - 1 : 0;
   const tileWidth = Math.max(
     mode === 'skills' ? 32 : 28,
@@ -513,8 +674,8 @@ function getStripState({items, selectedIndex, columns, mode = 'default'}) {
   };
 }
 
-function ShelfStrip({items, selectedIndex, columns, mode = 'default', active = true, compact = false}) {
-  const viewport = getStripState({items, selectedIndex, columns, mode});
+function ShelfStrip({items, selectedIndex, columns, mode = 'default', active = true, compact = false, forceVisibleCount = null}) {
+  const viewport = getStripState({items, selectedIndex, columns, mode, compact, forceVisibleCount});
 
   return html`
     <${Box} flexDirection="column">
@@ -550,35 +711,61 @@ function ShelfStrip({items, selectedIndex, columns, mode = 'default', active = t
   `;
 }
 
-function CompactShelfPreview({title, subtitle, active, summary}) {
+function CompactShelfPreview({title, subtitle, active, summary, compact = false}) {
   return html`
-    <${Box} marginTop=${1} marginBottom=${1} flexDirection="column">
+    <${Box} marginTop=${compact ? 0 : 1} marginBottom=${1} flexDirection="column">
       <${Text} color=${active ? COLORS.text : COLORS.muted}>
         ${active ? '› ' : '· '}${title}
       <//>
-      <${Text} color=${COLORS.muted}>${compactText(subtitle, 120)}<//>
+      ${compact ? null : html`<${Text} color=${COLORS.muted}>${compactText(subtitle, 120)}<//>`}
       <${Text} color=${COLORS.muted}>${compactText(summary, 120)}<//>
-      <${Text} color=${COLORS.borderSoft}>${'─'.repeat(88)}<//>
+      ${compact ? null : html`<${Text} color=${COLORS.borderSoft}>${'─'.repeat(88)}<//>`}
     <//>
   `;
 }
 
-function ShelfHero({section, selectedItem, columns, selectedIndex = 0}) {
+function ShelfHero({section, selectedItem, columns, selectedIndex = 0, viewport = null}) {
   if (!section || !selectedItem) return null;
 
-  const wideLayout = columns >= 138;
-  if (!wideLayout) {
+  const profile = viewport || getViewportProfile({columns, rows: 40});
+  const wideLayout = profile.showWideHero;
+  const startHere = section.items.slice(0, 3).map((item) => item.title).join(', ');
+
+  if (profile.micro) {
     return html`
       <${Box} flexDirection="column" marginBottom=${1}>
         <${Text} color=${COLORS.accent}>› ${section.title}<//>
-        <${Text} color=${COLORS.muted}>${section.subtitle}<//>
+        <${Text} color=${COLORS.muted}>${compactText(section.subtitle, Math.max(36, columns - 4))}<//>
+        <${Text} color=${COLORS.muted}>${compactText(`${section.items.length} items · ${startHere}`, Math.max(36, columns - 4))}<//>
         <${ShelfStrip}
           items=${section.items}
           selectedIndex=${selectedIndex}
           columns=${columns}
           mode=${section.mode}
           active=${true}
-          compact=${false}
+          compact=${true}
+          forceVisibleCount=${1}
+        />
+      <//>
+    `;
+  }
+
+  if (!wideLayout) {
+    return html`
+      <${Box} flexDirection="column" marginBottom=${1}>
+        <${Text} color=${COLORS.accent}>› ${section.title}<//>
+        <${Text} color=${COLORS.muted}>${section.subtitle}<//>
+        ${profile.compact
+          ? html`<${Text} color=${COLORS.muted}>${compactText(`${section.items.length} items · ${startHere}`, Math.max(40, columns - 4))}<//>`
+          : null}
+        <${ShelfStrip}
+          items=${section.items}
+          selectedIndex=${selectedIndex}
+          columns=${columns}
+          mode=${section.mode}
+          active=${true}
+          compact=${profile.compact}
+          forceVisibleCount=${profile.compact ? (columns >= 110 ? 2 : 1) : null}
         />
       <//>
     `;
@@ -586,7 +773,6 @@ function ShelfHero({section, selectedItem, columns, selectedIndex = 0}) {
 
   const heroWidth = clamp(Math.floor(columns * 0.58), 72, 92);
   const sideWidth = Math.max(30, columns - heroWidth - 6);
-  const startHere = section.items.slice(0, 3).map((item) => item.title).join(', ');
   const sideLines = [
     `${section.items.length} items in this shelf`,
     startHere ? `Start here: ${startHere}` : null,
@@ -695,8 +881,9 @@ function formatPreviewLines(markdown, maxLines = 12) {
   return lines.filter((line, index, list) => !(line === '' && (index === 0 || index === list.length - 1))).slice(0, maxLines);
 }
 
-function SearchOverlay({query, setQuery, results, selectedIndex, columns}) {
+function SearchOverlay({query, setQuery, results, selectedIndex, columns, viewport = null}) {
   const width = clamp(columns - 6, 56, 110);
+  const visibleResults = results.slice(0, viewport?.micro ? 4 : 8);
   return html`
     <${ModalShell}
       width=${width}
@@ -711,7 +898,7 @@ function SearchOverlay({query, setQuery, results, selectedIndex, columns}) {
       <${Box} marginTop=${1} flexDirection="column">
         ${results.length === 0
           ? html`<${Text} color=${COLORS.muted}>No matches yet.<//>`
-          : results.slice(0, 8).map((result, index) => html`
+          : visibleResults.map((result, index) => html`
               <${ModalOption}
                 key=${result.name}
                 selected=${index === selectedIndex}
@@ -724,10 +911,10 @@ function SearchOverlay({query, setQuery, results, selectedIndex, columns}) {
   `;
 }
 
-function HelpOverlay() {
+function HelpOverlay({viewport = null}) {
   return html`
     <${ModalShell}
-      width=${88}
+      width=${viewport?.micro ? 64 : 88}
       title="Atlas help"
       subtitle="Keyboard and navigation for the library view."
       footerLines=${['? or Esc closes help']}
@@ -742,10 +929,11 @@ function HelpOverlay() {
   `;
 }
 
-function PaletteOverlay({query, setQuery, items, selectedIndex}) {
+function PaletteOverlay({query, setQuery, items, selectedIndex, viewport = null}) {
+  const visibleItems = viewport?.micro ? items.slice(0, 6) : items;
   return html`
     <${ModalShell}
-      width=${86}
+      width=${viewport?.micro ? 66 : 86}
       title="Command palette"
       subtitle="Jump around the library and change the surface."
       footerLines=${['Enter runs the command · Esc closes the palette']}
@@ -755,9 +943,9 @@ function PaletteOverlay({query, setQuery, items, selectedIndex}) {
         <${TextInput} value=${query} onChange=${setQuery} placeholder="search actions" />
       <//>
       <${Box} marginTop=${1} flexDirection="column">
-        ${items.length === 0
+        ${visibleItems.length === 0
           ? html`<${Text} color=${COLORS.muted}>No commands match.<//>`
-          : items.map((item, index) => html`
+          : visibleItems.map((item, index) => html`
               <${ModalOption}
                 key=${item.id}
                 selected=${index === selectedIndex}
@@ -882,11 +1070,12 @@ function ModalOption({label, description, selected}) {
   `;
 }
 
-function SkillScreen({skill, previewMode, agent, columns, relatedSkills = []}) {
+function SkillScreen({skill, previewMode, agent, columns, viewport = null, relatedSkills = []}) {
+  const profile = viewport || getViewportProfile({columns, rows: 40});
   const previewLines = formatPreviewLines(skill.markdown, 12);
   const installCommand = `npx ai-agent-skills install ${skill.name} --agent ${agent}`;
   const skillsSpec = getSkillsInstallSpec(skill, agent);
-  const wideLayout = columns >= 138;
+  const wideLayout = profile.showWideHero;
   const leftWidth = wideLayout ? clamp(Math.floor(columns * 0.23), 28, 34) : null;
   const rightWidth = wideLayout ? clamp(Math.floor(columns * 0.27), 30, 38) : null;
   const detailWidth = wideLayout
@@ -898,6 +1087,39 @@ function SkillScreen({skill, previewMode, agent, columns, relatedSkills = []}) {
   const relationLine = relatedSkills.length > 0
     ? `Also look at: ${relatedSkills.map((candidate) => candidate.title).join(', ')}`
     : 'Also look at: Explore the rest of this shelf from the collection and work area views.';
+
+  if (profile.micro) {
+    return html`
+      <${Box} flexDirection="column">
+        <${AtlasTile}
+          width=${clamp(columns - 2, 40, 96)}
+          minHeight=${7}
+          selected=${true}
+          title=${skill.title}
+          count=${skill.trust}
+          description=${skill.description}
+          chips=${[skill.sourceTitle, skill.syncMode]}
+          footerLeft=${skill.workAreaTitle}
+          footerRight="Catalog card"
+          sampleLines=${previewMode ? previewLines.slice(0, 1) : [skill.whyHere]}
+          compact=${true}
+        />
+        <${Inspector}
+          title=${previewMode ? 'Bundled preview' : 'Install'}
+          eyebrow=${previewMode ? 'Bundled SKILL.md excerpt' : 'Recommended action'}
+          lines=${previewMode
+            ? previewLines.slice(0, 6)
+            : [
+                'Use the vendored library copy for the stable install path.',
+                skillsSpec ? 'skills.sh is also available from the upstream repository.' : 'This skill currently installs through the curated library path.',
+                relationLine,
+              ]}
+          command=${previewMode ? null : installCommand}
+          footer="i install · p preview · o upstream"
+        />
+      <//>
+    `;
+  }
   const leftRail = html`
     <${Box} width=${leftWidth} marginRight=${1} flexDirection="column">
       <${Inspector}
@@ -1036,33 +1258,47 @@ function SkillScreen({skill, previewMode, agent, columns, relatedSkills = []}) {
                     />
                   `
                 : null}
-              <${Inspector}
-                title="Shelf position"
-                eyebrow="Where this lives in the library"
-                lines=${[
-                  collectionLine,
-                  `Work area: ${skill.workAreaTitle} / ${skill.branchTitle}`,
-                  `Origin: ${skill.origin} · Sync mode: ${skill.syncMode} · Trust: ${skill.trust}`,
-                ]}
-                footer="The library keeps provenance and placement visible on purpose."
-              />
-              <${Inspector}
-                title="Also look at"
-                eyebrow="Closest neighboring skills"
-                lines=${relatedSkills.length > 0
-                  ? relatedSkills.map((candidate) => `${candidate.title} · ${candidate.workAreaTitle} / ${candidate.branchTitle}`)
-                  : ['Explore the rest of this shelf from the collection and work area views.']}
-                footer="Nearby recommendations prefer the same work area, then the same shelf."
-              />
+              ${profile.compact
+                ? html`
+                    <${Inspector}
+                      title="Shelf position"
+                      eyebrow="Library context"
+                      lines=${[
+                        collectionLine,
+                        `Work area: ${skill.workAreaTitle} / ${skill.branchTitle}`,
+                      ]}
+                      footer="Use the collection and work area views for deeper context."
+                    />
+                  `
+                : html`
+                    <${Inspector}
+                      title="Shelf position"
+                      eyebrow="Where this lives in the library"
+                      lines=${[
+                        collectionLine,
+                        `Work area: ${skill.workAreaTitle} / ${skill.branchTitle}`,
+                        `Origin: ${skill.origin} · Sync mode: ${skill.syncMode} · Trust: ${skill.trust}`,
+                      ]}
+                      footer="The library keeps provenance and placement visible on purpose."
+                    />
+                    <${Inspector}
+                      title="Also look at"
+                      eyebrow="Closest neighboring skills"
+                      lines=${relatedSkills.length > 0
+                        ? relatedSkills.map((candidate) => `${candidate.title} · ${candidate.workAreaTitle} / ${candidate.branchTitle}`)
+                        : ['Explore the rest of this shelf from the collection and work area views.']}
+                      footer="Nearby recommendations prefer the same work area, then the same shelf."
+                    />
+                  `}
             <//>
           `}
     <//>
   `;
 }
 
-function InstallChooser({skill, agent, selectedIndex, columns}) {
+function InstallChooser({skill, agent, selectedIndex, columns, viewport = null}) {
   const skillsSpec = getSkillsInstallSpec(skill, agent);
-  const chooserWidth = clamp(columns - 2, 46, 104);
+  const chooserWidth = clamp(columns - (viewport?.micro ? 4 : 2), 46, viewport?.micro ? 72 : 104);
   const options = [
     {
       id: 'local',
@@ -1275,6 +1511,8 @@ function App({catalog, agent, onExit}) {
   const {exit} = useApp();
   const {stdout} = useStdout();
   const {columns, rows} = resolveTerminalSize(stdout);
+  const viewport = useMemo(() => getViewportProfile({columns, rows}), [columns, rows]);
+  const [bootReady, setBootReady] = useState(false);
 
   const [rootMode, setRootMode] = useState('collections');
   const [stack, setStack] = useState([{type: 'home'}]);
@@ -1295,6 +1533,23 @@ function App({catalog, agent, onExit}) {
   useEffect(() => {
     applyTheme(themeIndex);
   }, [themeIndex]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const settleViewport = async () => {
+      await waitForStableTerminalSize(stdout);
+      if (!cancelled) {
+        setBootReady(true);
+      }
+    };
+
+    settleViewport();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [stdout]);
 
   const current = stack[stack.length - 1];
   const activeTheme = THEMES[themeIndex] || THEMES[0];
@@ -1814,7 +2069,52 @@ function App({catalog, agent, onExit}) {
 
   let body = null;
 
-  if (searchMode) {
+  if (!bootReady) {
+    body = html`
+      <${Box} flexDirection="column">
+        <${Header}
+          breadcrumbs=${['Ai-Agent-Skills', 'Booting']}
+          title="Opening the library"
+          subtitle="Waiting for the terminal viewport to settle before the atlas mounts."
+          metaItems=${[`${columns}x${rows}`, activeTheme.label]}
+          hint="This avoids the browser opening partway down the pane."
+          viewport=${viewport}
+        />
+        <${Inspector}
+          title="Preparing the atlas"
+          eyebrow="Startup guard"
+          lines=${[
+            'Measuring the terminal twice before the full UI mounts.',
+            'Using a clean screen so the library does not inherit shell scrollback.',
+          ]}
+          footer="The full library should appear from the top once sizing stabilizes."
+        />
+      <//>
+    `;
+  } else if (viewport.tooSmall) {
+    body = html`
+      <${Box} flexDirection="column">
+        <${Header}
+          breadcrumbs=${breadcrumbs}
+          title="Terminal too small for the atlas"
+          subtitle="Use a larger terminal for browse, or fall back to the text commands below."
+          metaItems=${[`${columns}x${rows}`, `minimum 60x18`, activeTheme.label]}
+          hint="Try list, collections, info, or widen the terminal."
+          viewport=${viewport}
+        />
+        <${Inspector}
+          title="Text-mode fallback"
+          eyebrow="Library commands"
+          lines=${[
+            'npx ai-agent-skills collections',
+            'npx ai-agent-skills list --work-area frontend',
+            'npx ai-agent-skills info frontend-design',
+          ]}
+          footer="Resize the terminal to at least 60x18 to open the atlas again."
+        />
+      <//>
+    `;
+  } else if (searchMode) {
     body = html`
       <${Box} flexDirection="column">
         <${Header}
@@ -1823,6 +2123,7 @@ function App({catalog, agent, onExit}) {
           subtitle="Find skills by work area, branch, source repo, or title."
           metaItems=${[`${catalog.total} skills`, `${catalog.collections.length} collections`, `${catalog.sources.length} source repos`, activeTheme.label]}
           hint="Enter opens a skill · Esc closes search"
+          viewport=${viewport}
         />
         <${SearchOverlay}
           query=${query}
@@ -1830,6 +2131,7 @@ function App({catalog, agent, onExit}) {
           results=${searchResults}
           selectedIndex=${selectedIndex}
           columns=${columns}
+          viewport=${viewport}
         />
       <//>
     `;
@@ -1838,6 +2140,16 @@ function App({catalog, agent, onExit}) {
       const currentSection = curatedHomeSections[homeSectionIndex] || curatedHomeSections[0];
       const currentHomeIndex = homeSelections[homeSectionIndex] || 0;
       const selectedHomeItem = currentSection?.items?.[currentHomeIndex] || currentSection?.items?.[0];
+      const visibleSectionIndices = getVisibleHomeSectionIndices(
+        curatedHomeSections.length,
+        homeSectionIndex,
+        viewport
+      );
+      const showHomeInspector = !viewport.compact && columns < 138 && Boolean(selectedHomeItem);
+      const otherShelvesLine = curatedHomeSections
+        .filter((_, index) => index !== homeSectionIndex)
+        .map((section) => section.title)
+        .join(' · ');
 
       body = html`
         <${Box} flexDirection="column">
@@ -1847,9 +2159,12 @@ function App({catalog, agent, onExit}) {
             subtitle="Lead with taste first. Then drop into the work areas, branches, and source lineage underneath."
             metaItems=${[`${catalog.total} skills`, `${catalog.collections.length} collections`, `${catalog.areas.length} work areas`, `${catalog.sources.length} sources`, `target ${agent}`, activeTheme.label]}
             hint="Up/down changes shelves · Left/right moves within a shelf · Enter opens · : command palette"
+            viewport=${viewport}
           />
-          <${ModeTabs} rootMode=${rootMode} />
-          ${curatedHomeSections.map((section, index) => html`
+          <${ModeTabs} rootMode=${rootMode} compact=${viewport.compact} />
+          ${visibleSectionIndices.map((index) => {
+            const section = curatedHomeSections[index];
+            return html`
             <${Box} key=${section.id} flexDirection="column" marginBottom=${1}>
               ${index === homeSectionIndex
                 ? html`
@@ -1858,6 +2173,7 @@ function App({catalog, agent, onExit}) {
                       selectedItem=${section.items[homeSelections[index] || 0] || section.items[0]}
                       columns=${columns}
                       selectedIndex=${homeSelections[index] || 0}
+                      viewport=${viewport}
                     />
                   `
                 : html`
@@ -1866,11 +2182,20 @@ function App({catalog, agent, onExit}) {
                       subtitle=${section.subtitle}
                       active=${false}
                       summary=${`${section.items.length} items · ${section.items.slice(0, 3).map((item) => item.title).join(', ')}`}
+                      compact=${viewport.compact}
                     />
                   `}
             <//>
-          `)}
-          ${columns < 138 && selectedHomeItem
+          `;
+          })}
+          ${viewport.micro
+            ? html`
+                <${Text} color=${COLORS.muted}>
+                  ${compactText(`Other shelves: ${otherShelvesLine}`, Math.max(40, columns - 4))}
+                <//>
+              `
+            : null}
+          ${showHomeInspector
             ? html`
                 <${Inspector}
                   title=${selectedHomeItem.title}
@@ -1894,6 +2219,7 @@ function App({catalog, agent, onExit}) {
     } else {
       const homeItems = rootMode === 'areas' ? getHomeItems(catalog) : getSourceItems(catalog);
       const selectedHomeItem = homeItems[selectedIndex] || homeItems[0];
+      const showHomeInspector = !viewport.compact && Boolean(selectedHomeItem);
       body = html`
         <${Box} flexDirection="column">
           <${Header}
@@ -1904,16 +2230,18 @@ function App({catalog, agent, onExit}) {
               : 'Browse trusted source repos and the lanes they feed into the library.'}
             metaItems=${[`${catalog.total} skills`, `${catalog.collections.length} collections`, `${catalog.areas.length} work areas`, `${catalog.sources.length} sources`, `target ${agent}`, activeTheme.label]}
             hint="Arrow keys move · Enter drills in · / searches · : command palette"
+            viewport=${viewport}
           />
-          <${ModeTabs} rootMode=${rootMode} />
+          <${ModeTabs} rootMode=${rootMode} compact=${viewport.compact} />
           <${AtlasGrid}
             items=${homeItems}
             selectedIndex=${selectedIndex}
             columns=${columns}
             rows=${rows}
-            reservedRows=${11}
+            reservedRows=${getReservedRows('home-grid', viewport, {showInspector: showHomeInspector})}
+            compact=${viewport.compact}
           />
-          ${selectedHomeItem
+          ${showHomeInspector
             ? html`
                 <${Inspector}
                   title=${selectedHomeItem.title}
@@ -1947,24 +2275,30 @@ function App({catalog, agent, onExit}) {
             activeTheme.label,
           ]}
           hint="Arrow keys move across skills · Enter opens a skill · b goes back"
+          viewport=${viewport}
         />
-        <${Inspector}
-          title="Start here"
-          eyebrow="Pinned first picks for this shelf"
-          lines=${[
-            startHere,
-            `Main sources: ${currentCollection.sourceTitles.join(', ')}`,
-          ]}
-          footer="These are the fastest entry points before you browse the full shelf."
-        />
-        <${ShelfStrip}
-          items=${getCollectionSkillItems({skills: startHereSkills})}
-          selectedIndex=${0}
-          columns=${columns}
-          mode="skills"
-          active=${false}
-          compact=${true}
-        />
+        ${viewport.compact
+          ? html`<${Text} color=${COLORS.muted}>${compactText(`Start here: ${startHere}`, Math.max(40, columns - 4))}<//>`
+          : html`
+              <${Inspector}
+                title="Start here"
+                eyebrow="Pinned first picks for this shelf"
+                lines=${[
+                  startHere,
+                  `Main sources: ${currentCollection.sourceTitles.join(', ')}`,
+                ]}
+                footer="These are the fastest entry points before you browse the full shelf."
+              />
+              <${ShelfStrip}
+                items=${getCollectionSkillItems({skills: startHereSkills})}
+                selectedIndex=${0}
+                columns=${columns}
+                mode="skills"
+                active=${false}
+                compact=${true}
+                forceVisibleCount=${viewport.compact ? 1 : null}
+              />
+            `}
         <${Box} marginTop=${1}>
           <${AtlasGrid}
             items=${getCollectionSkillItems(currentCollection)}
@@ -1972,10 +2306,11 @@ function App({catalog, agent, onExit}) {
             columns=${columns}
             rows=${rows}
             mode="skills"
-            reservedRows=${18}
+            reservedRows=${getReservedRows('collection', viewport, {showInspector: !viewport.compact})}
+            compact=${viewport.compact}
           />
         <//>
-        ${selectedSkill
+        ${!viewport.compact && selectedSkill
           ? html`
               <${Inspector}
                 title=${selectedSkill.title}
@@ -1997,6 +2332,7 @@ function App({catalog, agent, onExit}) {
           subtitle=${currentArea.description}
           metaItems=${[`${currentArea.skillCount} skills`, `${currentArea.branches.length} branches`, `${currentArea.repoCount} repos`, activeTheme.label]}
           hint="Arrow keys move across lanes · Enter opens a branch · b goes back"
+          viewport=${viewport}
         />
         <${Box} marginTop=${1}>
           <${AtlasGrid}
@@ -2004,10 +2340,11 @@ function App({catalog, agent, onExit}) {
             selectedIndex=${selectedIndex}
             columns=${columns}
             rows=${rows}
-            reservedRows=${10}
+            reservedRows=${getReservedRows('home-grid', viewport, {showInspector: !viewport.compact})}
+            compact=${viewport.compact}
           />
         <//>
-        ${selectedBranch
+        ${!viewport.compact && selectedBranch
           ? html`
               <${Inspector}
                 title=${selectedBranch.title}
@@ -2033,6 +2370,7 @@ function App({catalog, agent, onExit}) {
           subtitle=${sourceNoteFor(currentSource.slug, 'A source view of the atlas: what this repo actually contributes.')}
           metaItems=${[`${currentSource.skillCount} skills`, `${currentSource.branchCount} branches`, `${currentSource.mirrorCount} mirrors`, `${currentSource.snapshotCount} snapshots`, activeTheme.label]}
           hint="Arrow keys move across lanes · Enter opens a branch · b goes back"
+          viewport=${viewport}
         />
         <${Box} marginTop=${1}>
           <${AtlasGrid}
@@ -2040,10 +2378,11 @@ function App({catalog, agent, onExit}) {
             selectedIndex=${selectedIndex}
             columns=${columns}
             rows=${rows}
-            reservedRows=${10}
+            reservedRows=${getReservedRows('home-grid', viewport, {showInspector: !viewport.compact})}
+            compact=${viewport.compact}
           />
         <//>
-        ${selectedBranch
+        ${!viewport.compact && selectedBranch
           ? html`
               <${Inspector}
                 title=${selectedBranch.title}
@@ -2069,6 +2408,7 @@ function App({catalog, agent, onExit}) {
           subtitle=${`Inside ${currentArea.title.toLowerCase()}, this lane currently carries ${currentBranch.skillCount} skills.`}
           metaItems=${[`${currentBranch.skillCount} skills`, `${currentBranch.repoCount} repos`, ...currentBranch.repoTitles.slice(0, 2), activeTheme.label]}
           hint="Arrow keys move across skills · Enter opens a skill · b goes back"
+          viewport=${viewport}
         />
         <${Box} marginTop=${1}>
           <${AtlasGrid}
@@ -2077,10 +2417,11 @@ function App({catalog, agent, onExit}) {
             columns=${columns}
             rows=${rows}
             mode="skills"
-            reservedRows=${18}
+            reservedRows=${getReservedRows('skill-grid', viewport, {showInspector: !viewport.compact})}
+            compact=${viewport.compact}
           />
         <//>
-        ${selectedSkill
+        ${!viewport.compact && selectedSkill
           ? html`
               <${Inspector}
                 title=${selectedSkill.title}
@@ -2102,6 +2443,7 @@ function App({catalog, agent, onExit}) {
           subtitle=${`${currentSource.title} feeds this lane into the library.`}
           metaItems=${[`${currentSourceBranch.skillCount} skills`, currentSourceBranch.areaTitle, currentSource.title, activeTheme.label]}
           hint="Arrow keys move across skills · Enter opens a skill · b goes back"
+          viewport=${viewport}
         />
         <${Box} marginTop=${1}>
           <${AtlasGrid}
@@ -2110,10 +2452,11 @@ function App({catalog, agent, onExit}) {
             columns=${columns}
             rows=${rows}
             mode="skills"
-            reservedRows=${18}
+            reservedRows=${getReservedRows('skill-grid', viewport, {showInspector: !viewport.compact})}
+            compact=${viewport.compact}
           />
         <//>
-        ${selectedSkill
+        ${!viewport.compact && selectedSkill
           ? html`
               <${Inspector}
                 title=${selectedSkill.title}
@@ -2141,18 +2484,23 @@ function App({catalog, agent, onExit}) {
             activeTheme.label,
           ]}
           hint="i opens install choices · p toggles preview · o opens upstream"
+          viewport=${viewport}
         />
-        <${SkillScreen} skill=${currentSkill} previewMode=${previewMode} agent=${agent} columns=${columns} relatedSkills=${relatedSkills} />
+        <${SkillScreen} skill=${currentSkill} previewMode=${previewMode} agent=${agent} columns=${columns} viewport=${viewport} relatedSkills=${relatedSkills} />
         ${chooserOpen
-          ? html`<${InstallChooser} skill=${currentSkill} agent=${agent} selectedIndex=${chooserIndex} columns=${columns} />`
+          ? html`<${InstallChooser} skill=${currentSkill} agent=${agent} selectedIndex=${chooserIndex} columns=${columns} viewport=${viewport} />`
           : null}
       <//>
     `;
   }
 
-  const footerHint = current.type === 'skill'
-    ? '/ search · : palette · b back · i install · p preview · o upstream · t theme · ? help · q quit'
-    : '/ search · : palette · Enter open · b back · c/w/r switch root views · t theme · ? help · q quit';
+  const footerHint = viewport.micro
+    ? current.type === 'skill'
+      ? 'i install · p preview · o upstream · b back · q quit'
+      : 'Enter open · b back · : commands · q quit'
+    : current.type === 'skill'
+      ? '/ search · : palette · b back · i install · p preview · o upstream · t theme · ? help · q quit'
+      : '/ search · : palette · Enter open · b back · c/w/r switch root views · t theme · ? help · q quit';
   const footerMode = current.type === 'skill'
     ? 'DETAIL'
     : current.type === 'home'
@@ -2164,18 +2512,47 @@ function App({catalog, agent, onExit}) {
 
   return html`
     <${Box} flexDirection="column">
-      ${helpOpen ? html`<${HelpOverlay} />` : null}
-      ${paletteOpen ? html`<${PaletteOverlay} query=${paletteQuery} setQuery=${setPaletteQuery} items=${filteredPaletteItems} selectedIndex=${paletteIndex} />` : null}
+      ${helpOpen ? html`<${HelpOverlay} viewport=${viewport} />` : null}
+      ${paletteOpen ? html`<${PaletteOverlay} query=${paletteQuery} setQuery=${setPaletteQuery} items=${filteredPaletteItems} selectedIndex=${paletteIndex} viewport=${viewport} />` : null}
       ${body}
-      <${FooterBar} hint=${footerHint} mode=${footerMode} detail=${footerDetail} columns=${columns} />
+      <${FooterBar} hint=${footerHint} mode=${footerMode} detail=${footerDetail} columns=${columns} viewport=${viewport} />
     <//>
   `;
 }
 
 export async function launchTui({agent = 'claude'} = {}) {
   const catalog = buildCatalog();
+  const restoreScreen = enterInteractiveScreen(process.stdout);
 
   return await new Promise((resolve) => {
-    render(html`<${App} catalog=${catalog} agent=${agent} onExit=${resolve} />`);
+    let exitAction = null;
+    const instance = render(
+      html`<${App} catalog=${catalog} agent=${agent} onExit=${(action) => {
+        exitAction = action;
+      }} />`,
+      {
+        stdout: process.stdout,
+        stdin: process.stdin,
+        stderr: process.stderr,
+        exitOnCtrlC: true,
+        patchConsole: true,
+      }
+    );
+
+    instance.waitUntilExit().then(() => {
+      instance.cleanup();
+      restoreScreen();
+      resolve(exitAction);
+    }).catch(() => {
+      instance.cleanup();
+      restoreScreen();
+      resolve(exitAction);
+    });
   });
 }
+
+export const __test = {
+  getViewportProfile,
+  getVisibleHomeSectionIndices,
+  getReservedRows,
+};

@@ -62,6 +62,14 @@ function runArgs(args) {
   }
 }
 
+function runModule(source) {
+  try {
+    return execFileSync(process.execPath, ['--input-type=module', '-e', source], { encoding: 'utf8', cwd: __dirname });
+  } catch (e) {
+    return e.stdout || e.stderr || e.message;
+  }
+}
+
 console.log('\n🧪 Running tests...\n');
 
 // ============ SKILLS.JSON TESTS ============
@@ -258,6 +266,13 @@ test('help command works', () => {
   assertContains(output, 'preview');
 });
 
+test('package exposes only the ai-agent-skills binary', () => {
+  const pkg = require('./package.json');
+  assertEqual(Object.keys(pkg.bin).length, 1);
+  assert(pkg.bin['ai-agent-skills'], 'Expected ai-agent-skills binary to exist');
+  assert(!pkg.bin.skills, 'skills binary alias should be removed');
+});
+
 test('list command works', () => {
   const output = run('list');
   assertContains(output, 'Available Skills');
@@ -325,6 +340,11 @@ test('preview command works', () => {
 test('browse command shows tty guidance outside a TTY', () => {
   const output = runArgs(['browse']);
   assertContains(output, 'requires a TTY terminal');
+});
+
+test('help output shows corrected OpenCode install path', () => {
+  const output = run('help');
+  assertContains(output, '~/.config/opencode/skill/');
 });
 
 test('invalid skill name rejected', () => {
@@ -449,6 +469,37 @@ test('uncurated skill info shows no collections', () => {
   const output = run('info internal-comms');
   assertContains(output, 'Collections:');
   assertContains(output, 'none');
+});
+
+test('viewport profile classifies small terminals correctly', () => {
+  const output = runModule(`
+    import {__test} from './tui/index.mjs';
+    console.log(JSON.stringify({
+      micro: __test.getViewportProfile({columns: 80, rows: 24}),
+      tooSmall: __test.getViewportProfile({columns: 50, rows: 16})
+    }));
+  `);
+  const data = JSON.parse(output);
+  assertEqual(data.micro.tier, 'micro');
+  assertEqual(data.micro.compact, true);
+  assertEqual(data.tooSmall.tooSmall, true);
+});
+
+test('home screen visibility collapses on compact terminals', () => {
+  const output = runModule(`
+    import {__test} from './tui/index.mjs';
+    const micro = __test.getViewportProfile({columns: 80, rows: 24});
+    const compact = __test.getViewportProfile({columns: 100, rows: 30});
+    console.log(JSON.stringify({
+      micro: __test.getVisibleHomeSectionIndices(5, 2, micro),
+      compact: __test.getVisibleHomeSectionIndices(5, 2, compact)
+    }));
+  `);
+  const data = JSON.parse(output);
+  assertEqual(data.micro.length, 1, 'micro view should only show the active shelf');
+  assertEqual(data.micro[0], 2, 'micro view should keep the active shelf');
+  assert(data.compact.length <= 3, 'compact view should keep the shelf list short');
+  assertContains(data.compact.join(','), '2');
 });
 
 // ============ SECURITY TESTS ============

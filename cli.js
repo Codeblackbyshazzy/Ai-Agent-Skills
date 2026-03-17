@@ -2333,7 +2333,7 @@ ${colors.bold}Agents:${colors.reset} (install targets ALL by default)
   ${colors.cyan}copilot${colors.reset}  .github/skills/ (alias for vscode)
   ${colors.cyan}gemini${colors.reset}   ~/.gemini/skills/
   ${colors.cyan}goose${colors.reset}    ~/.config/goose/skills/
-  ${colors.cyan}opencode${colors.reset} ~/.opencode/skill/
+  ${colors.cyan}opencode${colors.reset} ~/.config/opencode/skill/
   ${colors.cyan}letta${colors.reset}    ~/.letta/skills/
   ${colors.cyan}kilocode${colors.reset} ~/.kilocode/skills/
   ${colors.cyan}project${colors.reset}  .skills/ (portable)
