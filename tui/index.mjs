@@ -432,9 +432,9 @@ function ModeTabs({rootMode, compact = false}) {
   return html`
     <${Box} marginBottom=${compact ? 0 : 1} flexWrap="wrap">
       ${[
-        {id: 'collections', label: 'Collections (c)'},
-        {id: 'areas', label: 'Work Areas (w)'},
-        {id: 'sources', label: 'Source Repos (r)'},
+        {id: 'areas', label: 'Browse (w)'},
+        {id: 'collections', label: 'Picks (c)'},
+        {id: 'sources', label: 'Sources (r)'},
       ].map((tab) => {
         const selected = tab.id === rootMode;
         return html`
@@ -1545,7 +1545,7 @@ function App({catalog, scope, agent, onExit}) {
   const viewport = useMemo(() => getViewportProfile({columns, rows}), [columns, rows]);
   const [bootReady, setBootReady] = useState(false);
 
-  const [rootMode, setRootMode] = useState('collections');
+  const [rootMode, setRootMode] = useState('areas');
   const [stack, setStack] = useState([{type: 'home'}]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [homeSectionIndex, setHomeSectionIndex] = useState(0);
