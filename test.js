@@ -614,23 +614,6 @@ test('viewport profile classifies small terminals correctly', () => {
   assertEqual(data.tooSmall.tooSmall, true);
 });
 
-test('home screen visibility collapses on compact terminals', () => {
-  const output = runModule(`
-    import {__test} from './tui/index.mjs';
-    const micro = __test.getViewportProfile({columns: 80, rows: 24});
-    const compact = __test.getViewportProfile({columns: 100, rows: 30});
-    console.log(JSON.stringify({
-      micro: __test.getVisibleHomeSectionIndices(5, 2, micro),
-      compact: __test.getVisibleHomeSectionIndices(5, 2, compact)
-    }));
-  `);
-  const data = JSON.parse(output);
-  assert(data.micro.length >= 2, 'micro view should keep the active shelf and supporting previews');
-  assertContains(data.micro.join(','), '2');
-  assert(data.compact.length <= 3, 'compact view should keep the shelf list short');
-  assertContains(data.compact.join(','), '2');
-});
-
 test('atlas grid uses one shared tile height for layout math and rendering', () => {
   const output = runModule(`
     import {__test} from './tui/index.mjs';

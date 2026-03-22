@@ -245,22 +245,6 @@ function getReservedRows(screen, viewport, {showInspector = false} = {}) {
   return base + screenExtra + inspectorExtra;
 }
 
-function getVisibleHomeSectionIndices(sectionCount, activeIndex, viewport) {
-  if (sectionCount <= 0) return [];
-  const active = clamp(activeIndex, 0, sectionCount - 1);
-  const visible = new Set([active]);
-  const limit = viewport.micro ? 3 : viewport.compact ? 3 : 5;
-
-  for (let offset = 1; visible.size < Math.min(limit, sectionCount); offset += 1) {
-    if (active + offset < sectionCount) visible.add(active + offset);
-    if (visible.size >= Math.min(limit, sectionCount)) break;
-    if (active - offset >= 0) visible.add(active - offset);
-    if (active + offset >= sectionCount && active - offset < 0) break;
-  }
-
-  return Array.from(visible).sort((left, right) => left - right);
-}
-
 function fitText(text, maxLength) {
   const value = String(text || '');
   if (value.length <= maxLength) return value;
@@ -697,137 +681,6 @@ function ShelfStrip({items, selectedIndex, columns, mode = 'default', active = t
           ? html`<${Text} color=${COLORS.muted}>→ ${viewport.hiddenRight}<//>`
           : html`<${Text} color=${COLORS.muted}> <//>`}
       <//>
-    <//>
-  `;
-}
-
-function CompactShelfPreview({title, subtitle, active, summary, compact = false}) {
-  return html`
-    <${Box} marginTop=${compact ? 0 : 1} marginBottom=${compact ? 0 : 1} flexDirection="column">
-      <${Text} bold=${active} color=${active ? COLORS.text : COLORS.muted}>
-        ${active ? '› ' : '· '}${title}
-      <//>
-      ${compact ? null : html`<${Text} color=${COLORS.border}>${compactText(subtitle, 120)}<//>`}
-      <${Text} color=${COLORS.muted}>${compactText(summary, 120)}<//>
-      ${compact ? null : html`<${Text} color=${COLORS.border}>${'─'.repeat(72)}<//>`}
-    <//>
-  `;
-}
-
-function PosterSectionLead({item, mode, columns, viewport = null}) {
-  if (!item) return null;
-
-  const profile = viewport || getViewportProfile({columns, rows: 40});
-  const wide = columns >= 108 && !profile.compact;
-  const introLabel = mode === 'areas' ? 'Shelf focus' : 'Source focus';
-  const actionLabel = mode === 'areas' ? 'Open this shelf' : 'Open this publisher';
-  const dividerWidth = Math.max(28, Math.min(columns - 4, wide ? 84 : 56));
-  const contextLine = compactText((item.chips || []).join(' · '), Math.max(32, columns - 4));
-  const sampleLines = (item.sampleLines || []).slice(0, wide ? 2 : 1);
-  const description = compactText(item.description || '', Math.max(42, wide ? Math.floor(columns * 0.55) : columns - 4));
-  const metaLine = compactText(
-    [item.count, item.footerLeft].filter(Boolean).join(' · '),
-    Math.max(32, columns - 4)
-  );
-
-  return html`
-    <${Box} flexDirection="column" marginTop=${1} marginBottom=${1}>
-      <${Text} color=${COLORS.accentSoft}>${introLabel}<//>
-      <${Box} flexDirection=${wide ? 'row' : 'column'} marginTop=${1}>
-        <${Box} width=${wide ? Math.max(42, Math.floor(columns * 0.56)) : undefined} marginRight=${wide ? 3 : 0} flexDirection="column">
-          <${Text} bold color=${COLORS.text}>${item.title}<//>
-          ${description ? html`<${Text} color=${COLORS.muted}>${description}<//>` : null}
-          ${metaLine ? html`<${Text} color=${COLORS.border}>${metaLine}<//>` : null}
-        <//>
-        <${Box} flexDirection="column" marginTop=${wide ? 0 : 1}>
-          ${contextLine ? html`<${Text} color=${COLORS.accent}>${contextLine}<//>` : null}
-          ${sampleLines.map((line, index) => html`
-            <${Text} key=${`${line}-${index}`} color=${COLORS.text}>
-              ◆ ${compactText(line, Math.max(36, wide ? Math.floor(columns * 0.36) : columns - 4))}
-            <//>
-          `)}
-          <${Text} color=${COLORS.border}>${actionLabel} · Enter<//>
-        <//>
-      <//>
-      <${Text} color=${COLORS.border}>${'─'.repeat(dividerWidth)}<//>
-    <//>
-  `;
-}
-
-function PosterSectionPreview({item, selected = false, viewport = null, columns = 80}) {
-  if (!item) return null;
-
-  const profile = viewport || getViewportProfile({columns, rows: 40});
-  const supportingLine = compactText(
-    item.sampleLines?.[0] || item.footerLeft || item.description || '',
-    Math.max(34, columns - 10)
-  );
-  const detailLine = compactText(
-    item.footerLeft || item.description || '',
-    Math.max(28, columns - 10)
-  );
-
-  return html`
-    <${Box} flexDirection="column" marginBottom=${profile.micro ? 0 : 1}>
-      <${Box} justifyContent="space-between">
-        <${Text} bold=${selected} color=${selected ? COLORS.text : COLORS.muted}>
-          ${selected ? '◆ ' : '· '}${item.title}
-        <//>
-        ${item.count ? html`<${Text} color=${selected ? COLORS.accent : COLORS.border}>${item.count}<//>` : null}
-      <//>
-      ${item.description
-        ? html`<${Text} color=${COLORS.border}>${compactText(item.description, Math.max(34, columns - 6))}<//>`
-        : null}
-      ${supportingLine
-        ? html`<${Text} color=${selected ? COLORS.text : COLORS.muted}>${supportingLine}<//>`
-        : null}
-      ${profile.micro
-        ? null
-        : html`<${Text} color=${COLORS.border}>${detailLine}<//>`}
-    <//>
-  `;
-}
-
-function PosterHomeView({rootMode, items, selectedIndex, columns, viewport = null}) {
-  const profile = viewport || getViewportProfile({columns, rows: 40});
-  const safeIndex = clamp(selectedIndex, 0, Math.max(0, items.length - 1));
-  const lead = items[safeIndex] || items[0];
-  const visibleIndices = getVisibleHomeSectionIndices(items.length, safeIndex, profile);
-  const minVisibleIndex = visibleIndices.length > 0 ? visibleIndices[0] : safeIndex;
-  const maxVisibleIndex = visibleIndices.length > 0 ? visibleIndices[visibleIndices.length - 1] : safeIndex;
-  const supportingIndices = visibleIndices.filter((index) => index !== safeIndex);
-  const supportingItems = supportingIndices.map((index) => items[index]).filter(Boolean);
-  const hiddenAbove = minVisibleIndex;
-  const hiddenBelow = Math.max(0, items.length - maxVisibleIndex - 1);
-  const supportTitle = rootMode === 'areas' ? 'Nearby shelves' : 'Nearby sources';
-
-  return html`
-    <${Box} flexDirection="column">
-      ${hiddenAbove > 0
-        ? html`<${Text} color=${COLORS.muted}>↑ ${hiddenAbove} more above<//>`
-        : null}
-      <${PosterSectionLead} item=${lead} mode=${rootMode} columns=${columns} viewport=${profile} />
-      ${supportingItems.length > 0
-        ? html`
-            <${Box} flexDirection="column">
-              <${Text} color=${COLORS.accentSoft}>${supportTitle}<//>
-              <${Box} marginTop=${1} flexDirection="column">
-                ${supportingItems.map((item) => html`
-                  <${PosterSectionPreview}
-                    key=${item.id}
-                    item=${item}
-                    selected=${false}
-                    viewport=${profile}
-                    columns=${columns}
-                  />
-                `)}
-              <//>
-            <//>
-          `
-        : null}
-      ${hiddenBelow > 0
-        ? html`<${Text} color=${COLORS.muted}>↓ ${hiddenBelow} more below<//>`
-        : null}
     <//>
   `;
 }
@@ -2650,6 +2503,8 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
     `;
   } else if (current.type === 'home') {
     const homeItems = rootMode === 'areas' ? getShelfItems(catalog) : getSourceItems(catalog);
+    const selectedHomeItem = homeItems[selectedIndex] || homeItems[0];
+    const showHomeInspector = !viewport.compact && Boolean(selectedHomeItem);
     body = html`
       <${Box} flexDirection="column">
         <${Header}
@@ -2663,13 +2518,29 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
           viewport=${viewport}
         />
         <${ModeTabs} rootMode=${rootMode} compact=${viewport.compact} />
-        <${PosterHomeView}
-          rootMode=${rootMode}
-          items=${homeItems}
-          selectedIndex=${selectedIndex}
-          columns=${columns}
-          viewport=${viewport}
-        />
+        <${Box} marginTop=${1}>
+          <${AtlasGrid}
+            items=${homeItems}
+            selectedIndex=${selectedIndex}
+            columns=${columns}
+            rows=${rows}
+            reservedRows=${getReservedRows('home-grid', viewport, {showInspector: showHomeInspector})}
+            compact=${viewport.compact}
+          />
+        <//>
+        ${showHomeInspector
+          ? html`
+              <${Inspector}
+                title=${selectedHomeItem.title}
+                eyebrow=${rootMode === 'areas' ? 'Shelf' : 'Source'}
+                lines=${[
+                  selectedHomeItem.description,
+                  ...(selectedHomeItem.sampleLines || []),
+                ]}
+                footer="Enter opens the focused tile"
+              />
+            `
+          : null}
       <//>
     `;
   } else if (current.type === 'collection' && currentCollection) {
@@ -3099,7 +2970,6 @@ export const __test = {
   getAtlasTileHeight,
   formatPreviewLines,
   getViewportProfile,
-  getVisibleHomeSectionIndices,
   getReservedRows,
   getViewportState,
 };

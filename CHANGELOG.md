@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.4.3] - 2026-03-21
+
+### Changed
+- Changed the default TUI opening view back to the boxed shelf and source grid so `ai-agent-skills` lands directly on the card-based library browser instead of the poster-text lead view.
+- Restored the focused home inspector under the grid so the opening screen keeps the richer shelf/source preview while staying in the boxed layout.
+
+### Removed
+- Removed the temporary poster-home renderer and its compact-visibility helper now that the boxed library view is the default again.
+
 ## [3.4.2] - 2026-03-21
 
 ### Changed
