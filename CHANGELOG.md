@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.4.1] - 2026-03-21
+
+### Changed
+- Simplified the TUI to the two real browse modes, `Shelves` and `Sources`, so the library opens directly into the taxonomy instead of a separate home summary.
+- Renamed the overlapping frontend lanes to `Frontend (Anthropic)` and `Frontend (OpenAI)` so the publisher distinction is obvious while browsing.
+- Tightened shelf and source cards with more editorial copy and less filler metadata so the first scan feels more like a library and less like a dashboard.
+- Restored the README note that this repo launched before `skills.sh` and began as a universal installer before becoming a personal curated library.
+
+### Fixed
+- Corrected the source card footer pluralization in the TUI (`shelves`, not `shelfs`).
+
 ## [3.4.0] - 2026-03-21
 
 ### Added
