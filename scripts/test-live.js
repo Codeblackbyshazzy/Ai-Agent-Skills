@@ -720,6 +720,8 @@ async function main() {
           info('Running TUI smoke boot');
           const smoke = runTuiSmoke(smokeContext.env);
           ensure(smoke.code === 0, 'TUI smoke boot failed');
+          ensure(!smoke.combined.includes('Startup guard'), 'TUI boot should not render the startup guard');
+          ensure(!smoke.combined.includes('Opening the library'), 'TUI boot should land on the library, not a loading screen');
           report.tui.smoke = {
             code: smoke.code,
             durationMs: smoke.durationMs,
