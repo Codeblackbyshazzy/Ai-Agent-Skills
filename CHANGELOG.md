@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.4.2] - 2026-03-21
+
+### Changed
+- Tightened the TUI home into a stronger shelf-first poster layout with one dominant lead shelf or source and quieter neighboring picks below it.
+- Replaced the last internal `atlas` wording in the TUI with consistent `library`, `shelves`, and `sources` language.
+
+### Fixed
+- Fixed TUI boot so the library opens from the top of the terminal pane instead of landing partway down the first screen.
+- Removed the startup/loading card from the initial TUI frame so the first visible render is the actual library, not a boot placeholder.
+
 ## [3.4.1] - 2026-03-21
 
 ### Changed
