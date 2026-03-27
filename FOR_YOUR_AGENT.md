@@ -1,6 +1,6 @@
 # For Your Agent
 
-Use this when you want an Agent Skills-compatible agent with terminal access to set up a library for you.
+Use this when you want your agent to set up a library for you.
 
 ## Paste this into your agent
 
@@ -21,14 +21,14 @@ Use the CLI, not manual file edits.
 6. Run `npx ai-agent-skills build-docs` at the end.
 7. Tell me what you added, which shelves you used, and what you think I should add next.
 
-If you cannot run local commands here, tell me to use another Agent Skills-compatible agent with terminal access.
+If you cannot run local commands here, tell me to switch to an agent with terminal access.
 ```
 
 ## What the agent should do
 
 Start with the CLI. Do not hand-edit `skills.json`, `README.md`, or `WORK_AREAS.md` if the command already exists.
 
-The normal path is:
+The usual path is:
 
 - `init-library` to create the workspace
 - `add` for the first bundled picks

@@ -1,6 +1,6 @@
 # Start a Library
 
-This works well with any Agent Skills-compatible agent that has shell access. The CLI already supports non-interactive setup when the agent passes explicit metadata flags.
+This works well with any Agent Skills-compatible agent that can run shell commands. The CLI already supports non-interactive setup when the agent passes the metadata flags itself.
 
 Full handoff: [FOR_YOUR_AGENT.md](../../FOR_YOUR_AGENT.md)
 
