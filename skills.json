@@ -1,5 +1,5 @@
 {
-  "version": "3.5.1",
+  "version": "4.0.0",
   "updated": "2026-03-27T00:00:00Z",
   "total": 55,
   "workAreas": [
@@ -1555,7 +1555,7 @@
     },
     {
       "name": "appkit-accessibility-auditor",
-      "description": "Audit macOS AppKit interfaces for accessibility, focusing on VoiceOver, keyboard navigation, and semantics",
+      "description": "Use when auditing a macOS AppKit interface for accessibility, especially VoiceOver, keyboard navigation, and semantics.",
       "category": "development",
       "workArea": "mobile",
       "branch": "Swift / Accessibility",
@@ -1594,7 +1594,7 @@
     },
     {
       "name": "swiftui-accessibility-auditor",
-      "description": "Audit SwiftUI views for accessibility (iOS + macOS) with patch-ready fixes",
+      "description": "Use when auditing SwiftUI views for accessibility on iOS or macOS and you want concrete fixes.",
       "category": "development",
       "workArea": "mobile",
       "branch": "Swift / Accessibility",
@@ -1633,7 +1633,7 @@
     },
     {
       "name": "uikit-accessibility-auditor",
-      "description": "Audit UIKit-based screens for accessibility issues with concrete VoiceOver and Dynamic Type fixes",
+      "description": "Use when auditing UIKit screens for accessibility issues, especially VoiceOver, Dynamic Type, and control semantics.",
       "category": "development",
       "workArea": "mobile",
       "branch": "Swift / Accessibility",
@@ -1672,7 +1672,7 @@
     },
     {
       "name": "swift-architecture-skill",
-      "description": "Swift architecture patterns and playbooks for MVVM, TCA, Clean Architecture, and more.",
+      "description": "Use when choosing or refactoring Swift app architecture, including MVVM, TCA, Clean Architecture, and similar patterns.",
       "category": "development",
       "workArea": "mobile",
       "branch": "Swift / Architecture",
@@ -1711,7 +1711,7 @@
     },
     {
       "name": "core-data-expert",
-      "description": "Expert Core Data guidance (iOS/macOS): stack setup, fetch requests & NSFetchedResultsController, saving/merge conflicts, threading & Swift Concurrency, batch operations & persistent history, migrations, performance, and NSPersistentCloudKitContainer/CloudKit sync.",
+      "description": "Use when working with Core Data stack setup, fetches, concurrency, migrations, performance, or CloudKit sync.",
       "category": "development",
       "workArea": "mobile",
       "branch": "Swift / Core Data",
@@ -1829,7 +1829,7 @@
     },
     {
       "name": "ios-simulator-skill",
-      "description": "21 production-ready scripts for iOS app testing, building, and automation. Provides semantic UI navigation, build automation, accessibility testing, and simulator lifecycle management. Optimized for AI agents with minimal token output.",
+      "description": "Use when testing or automating an iOS app through the simulator, including builds, UI navigation, accessibility checks, and simulator lifecycle tasks.",
       "category": "development",
       "workArea": "mobile",
       "branch": "Swift / Tools",

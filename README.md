@@ -23,17 +23,28 @@
 
 ## Library
 
-`ai-agent-skills` is a CLI library of agent skills for tools like Claude Code, Codex, Cursor, and other SKILL.md-compatible agents.
+`ai-agent-skills` now does two jobs.
 
-I organize it the way I work:
+It ships my curated bundled library, and it gives you the CLI and TUI to build a managed library of your own.
+It works with Claude Code, Codex, Cursor, and other SKILL.md-compatible agents.
+
+The bundled library is organized the way I work:
 
 - Start with a shelf like `frontend` or `workflow`
 - Keep the set small enough to browse quickly
 - Keep provenance visible
 - Keep notes that explain why a skill is here
 
-Use `skills.sh` for the broad ecosystem.
-Use this repo for my kept set.
+Use `skills.sh` when you want the broad ecosystem.
+Use `ai-agent-skills` when you want a kept set, shelves, provenance, and a library you can manage yourself.
+
+## What's New in 4.0.0
+
+- Managed library workspaces with `init-library`
+- `add <source>` for bringing bundled picks, upstream repo skills, or house copies into your own library
+- `sync [name]` as the main refresh command, with `update` kept as an alias
+- Dependency-aware installs with `requires` and `--no-deps`
+- Installed-state visibility across the CLI and the TUI
 
 ## Why Keep It
 
@@ -58,6 +69,8 @@ Each skill here is either a house copy or a cataloged upstream pick.
 Upstream work stays upstream. That keeps the library lean.
 
 ## Quick Start
+
+### Use The Bundled Library
 
 ```bash
 # Open the terminal browser
@@ -91,6 +104,44 @@ Default install targets:
 - Project: `.agents/skills/`
 
 Legacy agent-specific targets still work through `--agent <name>`.
+
+### Start Your Own Library
+
+```bash
+# Create a managed workspace
+npx ai-agent-skills init-library my-library
+cd my-library
+
+# Add a bundled pick, refresh it, and rebuild the docs
+npx ai-agent-skills add frontend-design --area frontend --branch Implementation --why "I want this on my shelf."
+npx ai-agent-skills sync frontend-design -p
+npx ai-agent-skills add anthropics/skills --skill webapp-testing --area workflow --branch Testing --why "I use this when I want browser-level checks in the workspace."
+npx ai-agent-skills build-docs
+```
+
+## Workspace Mode
+
+Workspace mode is now part of the main product surface.
+
+Start with a managed workspace, pull in a few skills, then keep your own shelves current with `add`, `catalog`, `vendor`, `sync`, and `build-docs`.
+
+```bash
+npx ai-agent-skills init-library my-library
+cd my-library
+
+npx ai-agent-skills add frontend-design --area frontend --branch Implementation --why "I want this on my shelf."
+npx ai-agent-skills add anthropics/skills --skill webapp-testing --area workflow --branch Testing --why "I use this when I want browser-level checks in the workspace."
+npx ai-agent-skills sync frontend-design -p
+npx ai-agent-skills build-docs
+```
+
+Workflow guides:
+
+- [Start a library](./docs/workflows/start-a-library.md)
+- [Add an upstream skill](./docs/workflows/add-an-upstream-skill.md)
+- [Make a house copy](./docs/workflows/make-a-house-copy.md)
+- [Organize shelves](./docs/workflows/organize-shelves.md)
+- [Refresh installed skills](./docs/workflows/refresh-installed-skills.md)
 
 ## Browse
 
@@ -143,6 +194,9 @@ Collections are smaller sets. Useful, but secondary to the shelves.
 
 Use `catalog` when you want to add an upstream skill without vendoring it.
 
+In a managed workspace, `add` is the simpler front door.
+`catalog` and `vendor` are still the explicit power-user verbs.
+
 ```bash
 npx ai-agent-skills catalog openai/skills --list
 npx ai-agent-skills catalog openai/skills --skill linear --area workflow --branch Linear
@@ -151,8 +205,8 @@ npx ai-agent-skills catalog conorluddy/ios-simulator-skill --skill ios-simulator
 npx ai-agent-skills catalog shadcn-ui/ui --skill shadcn --area frontend --branch Components
 ```
 
-It does not copy the skill into this repo.
-It adds metadata and placement:
+It does not create a local copy.
+It adds metadata and placement in the active library:
 
 - which shelf it belongs on
 - what branch it lives under
@@ -242,7 +296,7 @@ npx ai-agent-skills install ./local-path
 npx ai-agent-skills install <skill-name> --dry-run
 
 # Maintain
-npx ai-agent-skills update [name]
+npx ai-agent-skills sync [name]
 npx ai-agent-skills uninstall <name>
 npx ai-agent-skills check
 npx ai-agent-skills doctor
@@ -261,7 +315,7 @@ npx ai-agent-skills vendor <repo-or-path> --skill <name> --area <shelf> --branch
 - `npm test`
   Fast regression coverage for CLI behavior, schema rules, routing, and local install flows.
 - `npm run test:live`
-  No-mock live verification. Clones the real upstream repos, captures raw `SKILL.md` frontmatter and file manifests, runs real install/update/uninstall flows in isolated temp homes and projects, drives the TUI through a real PTY, and writes a report to `tmp/live-test-report.json`.
+  No-mock live verification. Clones the real upstream repos, captures raw `SKILL.md` frontmatter and file manifests, runs real install/sync/uninstall flows in isolated temp homes and projects, drives the TUI through a real PTY, and writes a report to `tmp/live-test-report.json`.
 - `npm run test:live:quick`
   Smaller live matrix for faster iteration while keeping the same no-mock pipeline.
 

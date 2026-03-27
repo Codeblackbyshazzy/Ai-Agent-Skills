@@ -28,7 +28,13 @@ tmp/
 temp/
 
 # Internal working papers
-docs/
+docs/*
+!docs/workflows/
+docs/workflows/*
+!docs/workflows/*.md
+!docs/releases/
+docs/releases/*
+!docs/releases/*.md
 
 # Local install artifacts
 .skills/

@@ -9,9 +9,10 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execSync, execFileSync } = require('child_process');
-const { loadCatalogData } = require('./lib/catalog-data.cjs');
+const { loadCatalogData, validateCatalogData } = require('./lib/catalog-data.cjs');
 const { buildUpstreamCatalogEntry, addUpstreamSkillFromDiscovery } = require('./lib/catalog-mutations.cjs');
 const { generatedDocsAreInSync, renderGeneratedDocs } = require('./lib/render-docs.cjs');
+const { createLibraryContext } = require('./lib/library-context.cjs');
 const { buildCatalog, getGitHubInstallSpec, getSkillsInstallSpec } = require('./tui/catalog.cjs');
 
 const colors = {
@@ -115,7 +116,10 @@ function copyValidateFixtureFiles(tmpDir) {
   fs.mkdirSync(tmpLib, { recursive: true });
   fs.copyFileSync(path.join(__dirname, 'scripts', 'validate.js'), path.join(tmpScripts, 'validate.js'));
   fs.copyFileSync(path.join(__dirname, 'lib', 'catalog-data.cjs'), path.join(tmpLib, 'catalog-data.cjs'));
+  fs.copyFileSync(path.join(__dirname, 'lib', 'dependency-graph.cjs'), path.join(tmpLib, 'dependency-graph.cjs'));
   fs.copyFileSync(path.join(__dirname, 'lib', 'frontmatter.cjs'), path.join(tmpLib, 'frontmatter.cjs'));
+  fs.copyFileSync(path.join(__dirname, 'lib', 'install-state.cjs'), path.join(tmpLib, 'install-state.cjs'));
+  fs.copyFileSync(path.join(__dirname, 'lib', 'library-context.cjs'), path.join(tmpLib, 'library-context.cjs'));
   fs.copyFileSync(path.join(__dirname, 'lib', 'paths.cjs'), path.join(tmpLib, 'paths.cjs'));
   fs.copyFileSync(path.join(__dirname, 'lib', 'render-docs.cjs'), path.join(tmpLib, 'render-docs.cjs'));
 }
@@ -137,7 +141,10 @@ function writeFixtureDocs(tmpDir, data) {
     '<!-- GENERATED:source-table:end -->',
     '',
   ].join('\n');
-  const rendered = renderGeneratedDocs(data, readmeTemplate);
+  const rendered = renderGeneratedDocs(data, {
+    context: createLibraryContext(tmpDir, 'bundled'),
+    readmeSource: readmeTemplate,
+  });
   fs.writeFileSync(path.join(tmpDir, 'README.md'), rendered.readme);
   fs.writeFileSync(path.join(tmpDir, 'WORK_AREAS.md'), rendered.workAreas);
 }
@@ -154,6 +161,89 @@ function restoreCatalogFiles(snapshot) {
   fs.writeFileSync(path.join(__dirname, 'skills.json'), snapshot.skills);
   fs.writeFileSync(path.join(__dirname, 'README.md'), snapshot.readme);
   fs.writeFileSync(path.join(__dirname, 'WORK_AREAS.md'), snapshot.workAreas);
+}
+
+function slugifyName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function createWorkspaceFixture(libraryName = 'Workspace Test') {
+  const parentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skills-workspace-'));
+  const slug = slugifyName(libraryName);
+  const result = runCommandResult(['init-library', libraryName], { cwd: parentDir });
+  const workspaceDir = path.join(parentDir, slug);
+  const nestedDir = path.join(workspaceDir, 'nested', 'deeper');
+  fs.mkdirSync(nestedDir, { recursive: true });
+  return {
+    parentDir,
+    workspaceDir,
+    nestedDir,
+    slug,
+    result,
+    cleanup() {
+      fs.rmSync(parentDir, { recursive: true, force: true });
+    },
+  };
+}
+
+function seedWorkspaceCatalog(workspaceDir) {
+  const skillsJsonPath = path.join(workspaceDir, 'skills.json');
+  const skillsDir = path.join(workspaceDir, 'skills');
+  const skillName = 'local-skill';
+  const data = JSON.parse(fs.readFileSync(skillsJsonPath, 'utf8'));
+  data.collections = [
+    {
+      id: 'workspace-pack',
+      title: 'Workspace Pack',
+      description: 'A starter pack for this workspace.',
+      skills: [skillName],
+    },
+  ];
+  data.skills = [
+    {
+      name: skillName,
+      description: 'Use when testing workspace library behavior.',
+      category: 'development',
+      workArea: 'frontend',
+      branch: 'Testing',
+      author: 'workspace',
+      source: 'example/workspace-library',
+      license: 'MIT',
+      tags: ['workspace', 'test'],
+      featured: false,
+      verified: false,
+      origin: 'authored',
+      trust: 'reviewed',
+      syncMode: 'snapshot',
+      sourceUrl: 'https://github.com/example/workspace-library',
+      whyHere: 'A local house copy that proves the workspace catalog is the active source of truth.',
+      lastVerified: '',
+      vendored: true,
+      installSource: '',
+      tier: 'house',
+      distribution: 'bundled',
+      requires: [],
+      notes: '',
+      labels: [],
+      path: `skills/${skillName}`,
+    },
+  ];
+  data.total = data.skills.length;
+  fs.writeFileSync(skillsJsonPath, `${JSON.stringify(data, null, 2)}\n`);
+
+  const localSkillDir = path.join(skillsDir, skillName);
+  fs.mkdirSync(localSkillDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(localSkillDir, 'SKILL.md'),
+    `---\nname: ${skillName}\ndescription: Use when testing workspace library behavior.\n---\n\n# ${skillName}\n\nThis is a workspace-local house copy.\n`
+  );
+
+  const buildResult = runCommandResult(['build-docs'], { cwd: workspaceDir });
+  assertEqual(buildResult.status, 0, `build-docs should succeed for seeded workspace: ${buildResult.stdout}${buildResult.stderr}`);
 }
 
 console.log('\n🧪 Running tests...\n');
@@ -400,6 +490,491 @@ test('no-arg command falls back to help outside a TTY', () => {
   assertContains(output, 'browse');
 });
 
+test('init-library creates a managed workspace scaffold', () => {
+  const fixture = createWorkspaceFixture();
+  try {
+    assertEqual(fixture.result.status, 0, `init-library should succeed: ${fixture.result.stdout}${fixture.result.stderr}`);
+    assert(fs.existsSync(path.join(fixture.workspaceDir, 'skills.json')), 'skills.json should exist');
+    assert(fs.existsSync(path.join(fixture.workspaceDir, 'README.md')), 'README.md should exist');
+    assert(fs.existsSync(path.join(fixture.workspaceDir, 'WORK_AREAS.md')), 'WORK_AREAS.md should exist');
+    assert(fs.existsSync(path.join(fixture.workspaceDir, 'skills')), 'skills/ should exist');
+    assert(fs.existsSync(path.join(fixture.workspaceDir, '.ai-agent-skills', 'config.json')), 'workspace config should exist');
+
+    const config = JSON.parse(fs.readFileSync(path.join(fixture.workspaceDir, '.ai-agent-skills', 'config.json'), 'utf8'));
+    assertEqual(config.mode, 'workspace');
+    assertEqual(config.librarySlug, fixture.slug);
+
+    const readme = fs.readFileSync(path.join(fixture.workspaceDir, 'README.md'), 'utf8');
+    assertContains(readme, '0 skills · 3 shelves · 0 collections');
+    assertNotContains(readme, 'GitHub stars');
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('build-docs is workspace-only', () => {
+  const result = runCommandResult(['build-docs']);
+  assert(result.status !== 0, 'build-docs should fail outside a workspace');
+  assertContains(`${result.stdout}${result.stderr}`, 'only works inside an initialized library workspace');
+});
+
+test('workspace mutation commands are blocked outside a workspace or maintainer repo', () => {
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skills-outside-'));
+  try {
+    const curateResult = runCommandResult(['curate', 'review'], { cwd: outsideDir });
+    assert(curateResult.status !== 0, 'curate should fail outside a workspace');
+    assertContains(`${curateResult.stdout}${curateResult.stderr}`, 'only works inside a managed workspace or the maintainer repo');
+
+    const vendorResult = runCommandResult(['vendor', __dirname, '--skill', 'best-practices'], { cwd: outsideDir });
+    assert(vendorResult.status !== 0, 'vendor should fail outside a workspace');
+    assertContains(`${vendorResult.stdout}${vendorResult.stderr}`, 'only works inside a managed workspace or the maintainer repo');
+
+    const catalogResult = runCommandResult(['catalog', 'anthropics/skills', '--skill', 'frontend-design'], { cwd: outsideDir });
+    assert(catalogResult.status !== 0, 'catalog should fail outside a workspace');
+    assertContains(`${catalogResult.stdout}${catalogResult.stderr}`, 'only works inside a managed workspace or the maintainer repo');
+  } finally {
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  }
+});
+
+test('workspace mode uses the active workspace library instead of the bundled catalog', () => {
+  const fixture = createWorkspaceFixture();
+  try {
+    seedWorkspaceCatalog(fixture.workspaceDir);
+
+    const listOutput = runArgsWithOptions(['list', '--work-area', 'frontend'], { cwd: fixture.nestedDir });
+    assertContains(listOutput, 'local-skill');
+    assertNotContains(listOutput, 'frontend-design');
+
+    const searchOutput = runArgsWithOptions(['search', 'local-skill'], { cwd: fixture.nestedDir });
+    assertContains(searchOutput, 'local-skill');
+
+    const infoOutput = runArgsWithOptions(['info', 'local-skill'], { cwd: fixture.nestedDir });
+    assertContains(infoOutput, 'Workspace Pack [workspace-pack]');
+    assertNotContains(infoOutput, 'example/workspace-library --agent cursor');
+
+    const collectionsOutput = runArgsWithOptions(['collections'], { cwd: fixture.nestedDir });
+    assertContains(collectionsOutput, 'Workspace Pack');
+    assertNotContains(collectionsOutput, 'swift-agent-skills');
+
+    const previewOutput = runArgsWithOptions(['preview', 'local-skill'], { cwd: fixture.nestedDir });
+    assertContains(previewOutput, 'workspace-local house copy');
+
+    const missingOutput = runArgsWithOptions(['info', 'pdf'], { cwd: fixture.nestedDir });
+    assertContains(missingOutput, 'not found');
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('workspace catalog installs recover after the workspace moves and show a clear message when unavailable', () => {
+  const fixture = createWorkspaceFixture();
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'skills-home-'));
+  try {
+    seedWorkspaceCatalog(fixture.workspaceDir);
+
+    const installEnv = { ...process.env, HOME: tempHome };
+    const installResult = runCommandResult(['install', 'local-skill'], { cwd: fixture.nestedDir, env: installEnv });
+    assertEqual(installResult.status, 0, `workspace install should succeed: ${installResult.stdout}${installResult.stderr}`);
+
+    const relocatedWorkspaceDir = path.join(fixture.parentDir, `${fixture.slug}-relocated`);
+    fs.renameSync(fixture.workspaceDir, relocatedWorkspaceDir);
+    const relocatedNestedDir = path.join(relocatedWorkspaceDir, 'nested', 'deeper');
+
+    const recoveredCheck = runArgsWithOptions(['check', 'global'], { cwd: relocatedNestedDir, env: installEnv });
+    assertContains(recoveredCheck, 'local-skill');
+    assertContains(recoveredCheck, 'up to date');
+
+    const unavailableCheck = runArgsWithOptions(['check', 'global'], { cwd: tempHome, env: installEnv });
+    assertContains(unavailableCheck, 'workspace source unavailable');
+
+    const unavailableUpdate = runArgsWithOptions(['update', 'local-skill'], { cwd: tempHome, env: installEnv });
+    assertContains(unavailableUpdate, 'workspace library for this installed skill is unavailable');
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+    fixture.cleanup();
+  }
+});
+
+test('workflow docs exist and README links them', () => {
+  const docsDir = path.join(__dirname, 'docs', 'workflows');
+  const expected = [
+    'start-a-library.md',
+    'add-an-upstream-skill.md',
+    'make-a-house-copy.md',
+    'organize-shelves.md',
+    'refresh-installed-skills.md',
+  ];
+  const readme = fs.readFileSync(path.join(__dirname, 'README.md'), 'utf8');
+
+  expected.forEach((fileName) => {
+    assert(fs.existsSync(path.join(docsDir, fileName)), `Expected workflow doc ${fileName}`);
+    assertContains(readme, `./docs/workflows/${fileName}`);
+  });
+  assertContains(readme, '## Workspace Mode');
+});
+
+test('workspace add imports a bundled library pick into the active workspace', () => {
+  const fixture = createWorkspaceFixture();
+  try {
+    const result = runCommandResult([
+      'add', 'frontend-design',
+      '--area', 'frontend',
+      '--branch', 'Implementation',
+      '--why', 'I want this on my shelf because it matches how I build frontend work.',
+    ], { cwd: fixture.workspaceDir });
+    assertEqual(result.status, 0, `workspace add should succeed: ${result.stdout}${result.stderr}`);
+
+    const data = JSON.parse(fs.readFileSync(path.join(fixture.workspaceDir, 'skills.json'), 'utf8'));
+    const skill = data.skills.find((entry) => entry.name === 'frontend-design');
+    assert(skill, 'Expected frontend-design to be added to workspace skills.json');
+    assertEqual(skill.tier, 'upstream');
+    assertEqual(skill.distribution, 'live');
+    assertEqual(skill.workArea, 'frontend');
+    assertEqual(skill.branch, 'Implementation');
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('workspace add wraps vendor for local sources', () => {
+  const fixture = createWorkspaceFixture();
+  const sourceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'workspace-add-local-'));
+  try {
+    const skillDir = path.join(sourceDir, 'skills', 'local-house');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: local-house\ndescription: Use when testing workspace add from local path.\n---\n# local-house');
+
+    const result = runCommandResult([
+      'add', sourceDir,
+      '--skill', 'local-house',
+      '--area', 'workflow',
+      '--branch', 'Local',
+      '--why', 'I want a local house copy in this workspace so I can edit it directly.',
+    ], { cwd: fixture.workspaceDir });
+    assertEqual(result.status, 0, `workspace add from local source should succeed: ${result.stdout}${result.stderr}`);
+    assert(fs.existsSync(path.join(fixture.workspaceDir, 'skills', 'local-house', 'SKILL.md')), 'Expected vendored workspace copy');
+
+    const data = JSON.parse(fs.readFileSync(path.join(fixture.workspaceDir, 'skills.json'), 'utf8'));
+    const skill = data.skills.find((entry) => entry.name === 'local-house');
+    assert(skill, 'Expected local-house in workspace catalog');
+    assertEqual(skill.tier, 'house');
+  } finally {
+    fs.rmSync(sourceDir, { recursive: true, force: true });
+    fixture.cleanup();
+  }
+});
+
+test('workspace add routes GitHub sources through catalog semantics', () => {
+  const fixture = createWorkspaceFixture();
+  try {
+    const result = runCommandResult(['add', 'anthropics/skills'], { cwd: fixture.workspaceDir });
+    assert(result.status !== 0, 'GitHub add should require --skill');
+    assertContains(`${result.stdout}${result.stderr}`, 'requires --skill');
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('install-state shows up in list, search, info, and collections output', () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'install-state-home-'));
+  try {
+    runCommandResult(['install', 'best-practices'], { env: { ...process.env, HOME: tempHome } });
+
+    const listOutput = runArgsWithOptions(['list', '--work-area', 'agent-engineering'], { env: { ...process.env, HOME: tempHome } });
+    assertContains(listOutput, 'installed globally');
+
+    const searchOutput = runArgsWithOptions(['search', 'best-practices'], { env: { ...process.env, HOME: tempHome } });
+    assertContains(searchOutput, 'installed globally');
+
+    const infoOutput = runArgsWithOptions(['info', 'best-practices'], { env: { ...process.env, HOME: tempHome } });
+    assertContains(infoOutput, 'Install Status: installed globally');
+
+    const collectionsOutput = runArgsWithOptions(['collections'], { env: { ...process.env, HOME: tempHome } });
+    assertContains(collectionsOutput, 'installed');
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('catalog validation rejects invalid requires graphs', () => {
+  const fixture = {
+    version: '1.0.0',
+    updated: '2026-03-27T00:00:00Z',
+    total: 2,
+    workAreas: [{ id: 'frontend', title: 'Frontend', description: 'Frontend work.' }],
+    collections: [],
+    skills: [
+      {
+        name: 'alpha',
+        description: 'Use when testing dependency validation.',
+        category: 'development',
+        workArea: 'frontend',
+        branch: 'Testing',
+        author: 'test',
+        license: 'MIT',
+        source: 'test/repo',
+        sourceUrl: 'https://github.com/test/repo',
+        origin: 'authored',
+        trust: 'reviewed',
+        syncMode: 'authored',
+        whyHere: 'This is a long enough curator note for alpha.',
+        requires: ['beta'],
+      },
+      {
+        name: 'beta',
+        description: 'Use when testing dependency validation.',
+        category: 'development',
+        workArea: 'frontend',
+        branch: 'Testing',
+        author: 'test',
+        license: 'MIT',
+        source: 'test/repo',
+        sourceUrl: 'https://github.com/test/repo',
+        origin: 'authored',
+        trust: 'reviewed',
+        syncMode: 'authored',
+        whyHere: 'This is a long enough curator note for beta.',
+        requires: ['alpha'],
+      },
+    ],
+  };
+
+  const validation = validateCatalogData(fixture);
+  assert(validation.errors.some((entry) => entry.includes('Dependency cycle detected')), 'Expected dependency cycle validation error');
+});
+
+test('catalog validation rejects duplicate requires entries', () => {
+  const fixture = {
+    version: '1.0.0',
+    updated: '2026-03-27T00:00:00Z',
+    total: 2,
+    workAreas: [{ id: 'frontend', title: 'Frontend', description: 'Frontend work.' }],
+    collections: [],
+    skills: [
+      {
+        name: 'alpha',
+        description: 'Use when testing duplicate dependency validation.',
+        category: 'development',
+        workArea: 'frontend',
+        branch: 'Testing',
+        author: 'test',
+        license: 'MIT',
+        source: 'test/repo',
+        sourceUrl: 'https://github.com/test/repo',
+        origin: 'authored',
+        trust: 'reviewed',
+        syncMode: 'authored',
+        whyHere: 'This is a long enough curator note for alpha.',
+        requires: ['beta', 'beta'],
+      },
+      {
+        name: 'beta',
+        description: 'Use when testing duplicate dependency validation.',
+        category: 'development',
+        workArea: 'frontend',
+        branch: 'Testing',
+        author: 'test',
+        license: 'MIT',
+        source: 'test/repo',
+        sourceUrl: 'https://github.com/test/repo',
+        origin: 'authored',
+        trust: 'reviewed',
+        syncMode: 'authored',
+        whyHere: 'This is a long enough curator note for beta.',
+        requires: [],
+      },
+    ],
+  };
+
+  const validation = validateCatalogData(fixture);
+  assert(validation.errors.some((entry) => entry.includes('duplicate dependency')), 'Expected duplicate dependency validation error');
+});
+
+test('workspace installs include dependencies unless --no-deps is used', () => {
+  const fixture = createWorkspaceFixture();
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'workspace-deps-home-'));
+  try {
+    const data = JSON.parse(fs.readFileSync(path.join(fixture.workspaceDir, 'skills.json'), 'utf8'));
+    data.skills = [
+      {
+        name: 'dep-skill',
+        description: 'Use when testing dependency installs.',
+        category: 'development',
+        workArea: 'frontend',
+        branch: 'Dependencies',
+        author: 'workspace',
+        source: 'example/workspace-library',
+        license: 'MIT',
+        tags: [],
+        featured: false,
+        verified: false,
+        origin: 'authored',
+        trust: 'reviewed',
+        syncMode: 'snapshot',
+        sourceUrl: 'https://github.com/example/workspace-library',
+        whyHere: 'This is the dependency that should install first inside the workspace.',
+        vendored: true,
+        installSource: '',
+        tier: 'house',
+        distribution: 'bundled',
+        requires: [],
+        notes: '',
+        labels: [],
+        path: 'skills/dep-skill',
+      },
+      {
+        name: 'parent-skill',
+        description: 'Use when testing dependency installs.',
+        category: 'development',
+        workArea: 'frontend',
+        branch: 'Dependencies',
+        author: 'workspace',
+        source: 'example/workspace-library',
+        license: 'MIT',
+        tags: [],
+        featured: false,
+        verified: false,
+        origin: 'authored',
+        trust: 'reviewed',
+        syncMode: 'snapshot',
+        sourceUrl: 'https://github.com/example/workspace-library',
+        whyHere: 'This parent skill should pull in its dependency during install.',
+        vendored: true,
+        installSource: '',
+        tier: 'house',
+        distribution: 'bundled',
+        requires: ['dep-skill'],
+        notes: '',
+        labels: [],
+        path: 'skills/parent-skill',
+      },
+    ];
+    data.total = data.skills.length;
+    fs.writeFileSync(path.join(fixture.workspaceDir, 'skills.json'), `${JSON.stringify(data, null, 2)}\n`);
+
+    ['dep-skill', 'parent-skill'].forEach((skillName) => {
+      const skillDir = path.join(fixture.workspaceDir, 'skills', skillName);
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), `---\nname: ${skillName}\ndescription: Use when testing dependency installs.\n---\n# ${skillName}`);
+    });
+
+    runCommandResult(['build-docs'], { cwd: fixture.workspaceDir });
+
+    const dryRun = runCommandResult(['install', 'parent-skill', '--project', '--dry-run'], {
+      cwd: fixture.workspaceDir,
+      env: { ...process.env, HOME: tempHome },
+    });
+    assertContains(`${dryRun.stdout}${dryRun.stderr}`, 'Dependency order: dep-skill -> parent-skill');
+
+    const result = runCommandResult(['install', 'parent-skill', '--project'], {
+      cwd: fixture.workspaceDir,
+      env: { ...process.env, HOME: tempHome },
+    });
+    assertEqual(result.status, 0, `dependency install should succeed: ${result.stdout}${result.stderr}`);
+    assert(fs.existsSync(path.join(fixture.workspaceDir, '.agents', 'skills', 'dep-skill', 'SKILL.md')), 'Expected dependency to be installed');
+    assert(fs.existsSync(path.join(fixture.workspaceDir, '.agents', 'skills', 'parent-skill', 'SKILL.md')), 'Expected parent skill to be installed');
+
+    fs.rmSync(path.join(fixture.workspaceDir, '.agents'), { recursive: true, force: true });
+
+    const noDeps = runCommandResult(['install', 'parent-skill', '--project', '--no-deps'], {
+      cwd: fixture.workspaceDir,
+      env: { ...process.env, HOME: tempHome },
+    });
+    assertEqual(noDeps.status, 0, `no-deps install should succeed: ${noDeps.stdout}${noDeps.stderr}`);
+    assert(!fs.existsSync(path.join(fixture.workspaceDir, '.agents', 'skills', 'dep-skill')), 'Expected dependency to be skipped with --no-deps');
+    assert(fs.existsSync(path.join(fixture.workspaceDir, '.agents', 'skills', 'parent-skill', 'SKILL.md')), 'Expected parent skill to be installed with --no-deps');
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+    fixture.cleanup();
+  }
+});
+
+test('sync works as the primary refresh command and update remains an alias', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'project-scope-sync-'));
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'project-scope-sync-home-'));
+  try {
+    runArgsWithOptions(['install', 'frontend-design', '--project'], {
+      cwd: tmpDir,
+      env: {...process.env, HOME: tempHome},
+    });
+
+    const syncOutput = runArgsWithOptions(['sync', 'frontend-design', '--project'], {
+      cwd: tmpDir,
+      env: {...process.env, HOME: tempHome},
+    });
+    assertContains(syncOutput, 'Updated: frontend-design');
+
+    const checkOutput = runArgsWithOptions(['check', 'project'], {
+      cwd: tmpDir,
+      env: {...process.env, HOME: tempHome},
+    });
+    assertContains(checkOutput, 'sync');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('workspace buildCatalog exposes install state and dependency relationships for the TUI', () => {
+  const fixture = createWorkspaceFixture();
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'workspace-catalog-home-'));
+  try {
+    seedWorkspaceCatalog(fixture.workspaceDir);
+    const skillsJsonPath = path.join(fixture.workspaceDir, 'skills.json');
+    const data = JSON.parse(fs.readFileSync(skillsJsonPath, 'utf8'));
+    data.skills.push({
+      name: 'parent-link',
+      description: 'Use when testing dependency rendering in the TUI.',
+      category: 'development',
+      workArea: 'frontend',
+      branch: 'Testing',
+      author: 'workspace',
+      source: 'example/workspace-library',
+      license: 'MIT',
+      tags: [],
+      featured: false,
+      verified: false,
+      origin: 'authored',
+      trust: 'reviewed',
+      syncMode: 'snapshot',
+      sourceUrl: 'https://github.com/example/workspace-library',
+      whyHere: 'This parent skill exists so the TUI can show dependency relationships.',
+      vendored: true,
+      installSource: '',
+      tier: 'house',
+      distribution: 'bundled',
+      requires: ['local-skill'],
+      notes: '',
+      labels: [],
+      path: 'skills/parent-link',
+    });
+    data.total = data.skills.length;
+    fs.writeFileSync(skillsJsonPath, `${JSON.stringify(data, null, 2)}\n`);
+    const parentDir = path.join(fixture.workspaceDir, 'skills', 'parent-link');
+    fs.mkdirSync(parentDir, { recursive: true });
+    fs.writeFileSync(path.join(parentDir, 'SKILL.md'), '---\nname: parent-link\ndescription: Use when testing dependency rendering in the TUI.\n---\n# parent-link');
+    runCommandResult(['install', 'local-skill'], { cwd: fixture.workspaceDir, env: { ...process.env, HOME: tempHome } });
+
+    const previousHome = process.env.HOME;
+    let catalog;
+    try {
+      process.env.HOME = tempHome;
+      catalog = buildCatalog(createLibraryContext(fixture.workspaceDir, 'workspace'));
+    } finally {
+      process.env.HOME = previousHome;
+    }
+    const localSkill = catalog.skills.find((candidate) => candidate.name === 'local-skill');
+    const parentSkill = catalog.skills.find((candidate) => candidate.name === 'parent-link');
+    assertEqual(localSkill.installStateLabel, 'installed globally');
+    assert(parentSkill.requiresTitles.includes('Local Skill'), 'Expected TUI catalog to resolve dependency titles');
+    assert(localSkill.requiredByTitles.includes('Parent Link'), 'Expected TUI catalog to resolve reverse dependency titles');
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+    fixture.cleanup();
+  }
+});
+
 test('collections command works', () => {
   const output = run('collections');
   assertContains(output, 'Curated Collections');
@@ -471,6 +1046,7 @@ test('README keeps the launch timeline and universal installer context', () => {
   assertContains(readme, 'December 17, 2025');
   assertContains(readme, 'before `skills.sh` existed');
   assertContains(readme, 'Originally this repo was that installer.');
+  assertContains(readme, 'init-library my-library');
 });
 
 test('help output shows scope-based targets and legacy agent support', () => {
@@ -500,7 +1076,8 @@ test('collection dry-run shows resolved Swift pack', () => {
   const output = run('install --collection swift-agent-skills --dry-run -p');
   assertContains(output, 'Dry Run');
   assertContains(output, 'Would install collection: Swift Agent Skills [swift-agent-skills]');
-  assertContains(output, 'Skills: 24');
+  assertContains(output, 'Requested: 24 skills');
+  assertContains(output, 'Resolved: 24 skills');
   assertContains(output, 'swiftui-pro');
   assertContains(output, 'ios-simulator-skill');
 });
@@ -723,10 +1300,27 @@ test('vendored catalog skills carry real markdown into the TUI catalog', () => {
   assert(typeof skill.markdown === 'string' && skill.markdown.includes('#'), 'Expected vendored markdown to be loaded');
 });
 
+test('workspace catalogs load house-copy markdown from the workspace root', () => {
+  const fixture = createWorkspaceFixture();
+  try {
+    seedWorkspaceCatalog(fixture.workspaceDir);
+    const catalog = buildCatalog(createLibraryContext(fixture.workspaceDir, 'workspace'));
+    const skill = catalog.skills.find((candidate) => candidate.name === 'local-skill');
+    assertEqual(catalog.mode, 'workspace');
+    assert(skill, 'Expected local-skill in workspace catalog');
+    assert(typeof skill.markdown === 'string' && skill.markdown.includes('workspace-local house copy'), 'Expected workspace house copy markdown to be loaded');
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test('npm pack --dry-run excludes tmp reports from the tarball', () => {
-  const output = execFileSync('npm', ['pack', '--dry-run'], { encoding: 'utf8', cwd: __dirname });
+  const output = execSync('npm pack --dry-run 2>&1', { encoding: 'utf8', cwd: __dirname });
   assertNotContains(output, 'tmp/live-test-report.json');
   assertNotContains(output, 'tmp/live-quick-report.json');
+  assertContains(output, 'docs/workflows/start-a-library.md');
+  assertNotContains(output, 'docs/library-experience-plan.md');
+  assertNotContains(output, 'docs/video-transcript-gap-analysis.md');
 });
 
 test('preview formatter handles missing markdown for upstream skills', () => {
@@ -1463,6 +2057,38 @@ test('upstream catalog entries are forced to upstream/live metadata', () => {
   assertEqual(entry.distribution, 'live');
   assertEqual(entry.vendored, false);
   assertEqual(entry.installSource, 'openai/skills/skills/tmp-upstream-skill');
+});
+
+test('upstream catalog entries preserve explicit GitHub refs in installSource and sourceUrl', () => {
+  const data = loadCatalogData();
+  const entry = buildUpstreamCatalogEntry({
+    source: 'https://github.com/openai/skills/tree/dev',
+    parsed: {
+      type: 'github',
+      owner: 'openai',
+      repo: 'skills',
+      url: 'https://github.com/openai/skills',
+      ref: 'dev',
+    },
+    discoveredSkill: {
+      name: 'tmp-upstream-ref-skill',
+      description: 'Use when testing GitHub ref preservation.',
+      relativeDir: 'skills/tmp-upstream-ref-skill',
+      frontmatter: { author: 'OpenAI', license: 'MIT' },
+    },
+    fields: {
+      workArea: 'frontend',
+      branch: 'Testing',
+      whyHere: 'This is a real whyHere long enough to satisfy the editorial placement rules.',
+      trust: 'reviewed',
+      tags: 'test,upstream',
+      labels: 'editorial',
+    },
+    existingCatalog: data,
+  });
+
+  assertEqual(entry.installSource, 'https://github.com/openai/skills/tree/dev/skills/tmp-upstream-ref-skill');
+  assertEqual(entry.sourceUrl, 'https://github.com/openai/skills/tree/dev/skills/tmp-upstream-ref-skill');
 });
 
 test('upstream catalog addition can append collection membership', () => {

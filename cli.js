@@ -11,15 +11,23 @@ const {
   CONFIG_FILE,
   LEGACY_AGENTS,
   MAX_SKILL_SIZE,
-  ROOT_DIR,
   SCOPES,
-  SKILLS_DIR,
 } = require('./lib/paths.cjs');
 const {
+  createLibraryContext,
+  getBundledLibraryContext,
+  isManagedWorkspaceRoot,
+  resolveLibraryContext,
+  readWorkspaceConfig,
+} = require('./lib/library-context.cjs');
+const {
+  addSkillToCollections,
   addUpstreamSkillFromDiscovery,
   buildReviewQueue,
   buildHouseCatalogEntry,
+  commitCatalogData,
   curateSkill,
+  ensureCollectionIdsExist,
   removeSkillFromCatalog,
   normalizeListInput,
   ensureRequiredPlacement,
@@ -29,9 +37,12 @@ const {
 } = require('./lib/catalog-mutations.cjs');
 const {
   findSkillByName,
-  getCatalogCounts,
   loadCatalogData,
+  normalizeSkill,
 } = require('./lib/catalog-data.cjs');
+const { buildDependencyGraph, resolveInstallOrder } = require('./lib/dependency-graph.cjs');
+const { buildInstallStateIndex, formatInstallStateLabel, getInstallState, getInstalledSkillNames, listInstalledSkillNamesInDir } = require('./lib/install-state.cjs');
+const { writeGeneratedDocs } = require('./lib/render-docs.cjs');
 const { parseSkillMarkdown: parseSkillMarkdownFile } = require('./lib/frontmatter.cjs');
 const { readInstalledMeta, writeInstalledMeta } = require('./lib/install-metadata.cjs');
 const {
@@ -108,6 +119,205 @@ function success(msg) { console.log(`${colors.green}${colors.bold}${msg}${colors
 function info(msg) { console.log(`${colors.cyan}${msg}${colors.reset}`); }
 function warn(msg) { console.log(`${colors.yellow}${msg}${colors.reset}`); }
 function error(msg) { console.log(`${colors.red}${msg}${colors.reset}`); }
+
+let ACTIVE_LIBRARY_CONTEXT = getBundledLibraryContext();
+
+function setActiveLibraryContext(context) {
+  ACTIVE_LIBRARY_CONTEXT = context || getBundledLibraryContext();
+  return ACTIVE_LIBRARY_CONTEXT;
+}
+
+function getActiveLibraryContext() {
+  return ACTIVE_LIBRARY_CONTEXT || getBundledLibraryContext();
+}
+
+function getActiveSkillsDir() {
+  return getActiveLibraryContext().skillsDir;
+}
+
+function getLibraryDisplayName(context = getActiveLibraryContext()) {
+  if (context.mode === 'workspace') {
+    const config = readWorkspaceConfig(context);
+    return config?.libraryName || path.basename(context.rootDir);
+  }
+  return 'AI Agent Skills';
+}
+
+function getLibraryModeHint(context = getActiveLibraryContext()) {
+  if (context.mode === 'workspace') {
+    return `${colors.dim}Using workspace library at ${context.rootDir}${colors.reset}`;
+  }
+  return null;
+}
+
+function requireWorkspaceContext(actionLabel = 'This command') {
+  const context = getActiveLibraryContext();
+  if (context.mode !== 'workspace') {
+    error(`${actionLabel} only works inside an initialized library workspace.`);
+    log(`${colors.dim}Create one with: npx ai-agent-skills init-library <name>${colors.reset}`);
+    process.exitCode = 1;
+    return null;
+  }
+  return context;
+}
+
+function slugifyLibraryName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function isInsideDirectory(targetPath, candidatePath) {
+  const relative = path.relative(path.resolve(targetPath), path.resolve(candidatePath));
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function isMaintainerRepoContext(context) {
+  return context.mode === 'bundled'
+    && fs.existsSync(path.join(context.rootDir, '.git'))
+    && isInsideDirectory(context.rootDir, process.cwd());
+}
+
+function requireEditableLibraryContext(actionLabel = 'This command') {
+  const context = getActiveLibraryContext();
+  if (context.mode === 'workspace') {
+    return context;
+  }
+
+  if (isMaintainerRepoContext(context)) {
+    return context;
+  }
+
+  error(`${actionLabel} only works inside a managed workspace or the maintainer repo.`);
+  log(`${colors.dim}Create one with: npx ai-agent-skills init-library <name>${colors.reset}`);
+  process.exitCode = 1;
+  return null;
+}
+
+function getCatalogContextFromMeta(meta) {
+  if (!meta || !meta.libraryMode) {
+    return getBundledLibraryContext();
+  }
+
+  if (meta.libraryMode === 'workspace') {
+    if (meta.libraryRoot && isManagedWorkspaceRoot(meta.libraryRoot)) {
+      return createLibraryContext(meta.libraryRoot, 'workspace');
+    }
+
+    const currentContext = resolveLibraryContext(process.cwd());
+    if (currentContext.mode === 'workspace') {
+      const currentConfig = readWorkspaceConfig(currentContext);
+      const currentSlug = currentConfig?.librarySlug || path.basename(currentContext.rootDir);
+      if (!meta.librarySlug || meta.librarySlug === currentSlug) {
+        return currentContext;
+      }
+    }
+
+    return null;
+  }
+
+  return getBundledLibraryContext();
+}
+
+function buildCatalogInstallMeta(skillName, targetDir, context = getActiveLibraryContext()) {
+  const workspaceConfig = context.mode === 'workspace' ? readWorkspaceConfig(context) : null;
+  return {
+    sourceType: 'catalog',
+    source: 'catalog',
+    skillName,
+    scope: resolveScopeLabel(targetDir),
+    libraryMode: context.mode,
+    libraryRoot: context.rootDir,
+    librarySlug: workspaceConfig?.librarySlug || (context.mode === 'workspace' ? path.basename(context.rootDir) : null),
+    libraryName: getLibraryDisplayName(context),
+  };
+}
+
+function getBundledCatalogData() {
+  return loadCatalogData(getBundledLibraryContext());
+}
+
+function getBundledCatalogSkill(skillName) {
+  const bundledData = getBundledCatalogData();
+  return bundledData.skills.find((skill) => skill.name === skillName) || null;
+}
+
+function inferInstallSourceFromCatalogSkill(skill) {
+  if (!skill) return '';
+  if (skill.installSource) return skill.installSource;
+  if (!skill.source) return '';
+
+  const normalizedPath = String(skill.path || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '');
+
+  if (!normalizedPath) return skill.source;
+  return `${skill.source}/${normalizedPath}`;
+}
+
+function buildImportedCatalogEntryFromBundledSkill(skill, fields) {
+  return normalizeSkill({
+    name: skill.name,
+    description: String(skill.description || '').trim(),
+    category: String(fields.category || skill.category || 'development').trim(),
+    workArea: String(fields.workArea || '').trim(),
+    branch: String(fields.branch || '').trim(),
+    author: String(skill.author || 'unknown').trim(),
+    source: String(skill.source || '').trim(),
+    license: String(skill.license || 'MIT').trim(),
+    tier: 'upstream',
+    distribution: 'live',
+    vendored: false,
+    installSource: inferInstallSourceFromCatalogSkill(skill),
+    tags: Array.isArray(skill.tags) ? skill.tags : [],
+    labels: Array.isArray(skill.labels) ? skill.labels : [],
+    requires: Array.isArray(skill.requires) ? skill.requires : [],
+    featured: false,
+    verified: false,
+    origin: 'curated',
+    trust: String(fields.trust || 'listed').trim() || 'listed',
+    syncMode: 'live',
+    sourceUrl: String(skill.sourceUrl || '').trim(),
+    whyHere: String(fields.whyHere || '').trim(),
+    lastVerified: '',
+    notes: String(fields.notes || '').trim(),
+    addedDate: currentIsoDay(),
+    lastCurated: currentCatalogTimestamp(),
+  });
+}
+
+function getCatalogInstallOrder(data, requestedSkillNames, noDeps = false) {
+  const names = Array.isArray(requestedSkillNames) ? requestedSkillNames : [requestedSkillNames];
+  if (noDeps) {
+    return [...new Set(names.filter(Boolean))];
+  }
+  return resolveInstallOrder(data, names);
+}
+
+function getCatalogInstallPlan(data, requestedSkillNames, noDeps = false) {
+  const orderedNames = getCatalogInstallOrder(data, requestedSkillNames, noDeps);
+  const requested = new Set((Array.isArray(requestedSkillNames) ? requestedSkillNames : [requestedSkillNames]).filter(Boolean));
+  const skills = orderedNames
+    .map((name) => findSkillByName(data, name))
+    .filter(Boolean);
+
+  return {
+    orderedNames,
+    requested,
+    skills,
+  };
+}
+
+function getInstallStateText(skillName, index = buildInstallStateIndex()) {
+  return formatInstallStateLabel(getInstallState(index, skillName));
+}
+
+function colorizeInstallStateLabel(label) {
+  if (!label) return '';
+  return `${colors.cyan}[${label}]${colors.reset}`;
+}
 
 // ============ CONFIG FILE SUPPORT ============
 
@@ -233,7 +443,7 @@ function readSkillDirectory(skillDir) {
 
 function loadSkillsJson() {
   try {
-    return loadCatalogData();
+    return loadCatalogData(getActiveLibraryContext());
   } catch (e) {
     error(`Failed to load skills.json: ${e.message}`);
     process.exit(1);
@@ -498,12 +708,13 @@ function printCollectionSuggestions(data) {
 
 function getAvailableSkills() {
   const skills = [];
+  const skillsDir = getActiveSkillsDir();
 
   // Vendored skills (local folders)
-  if (fs.existsSync(SKILLS_DIR)) {
+  if (fs.existsSync(skillsDir)) {
     try {
-      skills.push(...fs.readdirSync(SKILLS_DIR).filter(name => {
-        const skillPath = path.join(SKILLS_DIR, name);
+      skills.push(...fs.readdirSync(skillsDir).filter(name => {
+        const skillPath = path.join(skillsDir, name);
         return fs.statSync(skillPath).isDirectory() &&
                fs.existsSync(path.join(skillPath, 'SKILL.md'));
       }));
@@ -542,6 +753,7 @@ function parseArgs(args) {
     installed: false,
     all: false,
     dryRun: false,
+    noDeps: false,
     tags: null,
     labels: null,
     notes: null,
@@ -623,6 +835,9 @@ function parseArgs(args) {
     }
     else if (arg === '--dry-run' || arg === '-n') {
       result.dryRun = true;
+    }
+    else if (arg === '--no-deps') {
+      result.noDeps = true;
     }
     else if (arg === '--tag' || arg === '--tags' || arg === '-t') {
       result.tags = args[i + 1];
@@ -777,6 +992,7 @@ function isKnownCommand(command) {
     'collections',
     'install', 'i', 'add',
     'uninstall', 'remove', 'rm',
+    'sync',
     'update', 'upgrade',
     'search', 's', 'find',
     'info', 'show',
@@ -788,10 +1004,15 @@ function isKnownCommand(command) {
     'doctor',
     'validate',
     'init',
+    'init-library',
+    'build-docs',
     'config',
     'help',
     '--help',
     '-h',
+    'version',
+    '--version',
+    '-v',
   ]).has(command);
 }
 
@@ -886,7 +1107,7 @@ function installSkill(skillName, agent = 'claude', dryRun = false, targetPath = 
     return false;
   }
 
-  const sourcePath = path.join(SKILLS_DIR, skillName);
+  const sourcePath = path.join(getActiveSkillsDir(), skillName);
 
   if (!fs.existsSync(sourcePath)) {
     // Check if this is a non-vendored cataloged skill
@@ -946,12 +1167,7 @@ function installSkill(skillName, agent = 'claude', dryRun = false, targetPath = 
     copyDir(sourcePath, destPath);
 
     // Write metadata for update tracking
-    writeSkillMeta(destPath, {
-      sourceType: 'registry',
-      source: 'registry',
-      skillName,
-      scope: resolveScopeLabel(destDir),
-    });
+    writeSkillMeta(destPath, buildCatalogInstallMeta(skillName, destDir));
 
     const scopeLabel = resolveScopeLabel(destDir);
     success(`\nInstalled: ${skillName}`);
@@ -975,7 +1191,7 @@ function installSkill(skillName, agent = 'claude', dryRun = false, targetPath = 
 function installSkillToScope(skillName, scopePath, scopeLabel, dryRun = false) {
   try { validateSkillName(skillName); } catch (e) { error(e.message); return false; }
 
-  const sourcePath = path.join(SKILLS_DIR, skillName);
+  const sourcePath = path.join(getActiveSkillsDir(), skillName);
   if (!fs.existsSync(sourcePath)) {
     try {
       const data = loadSkillsJson();
@@ -1009,11 +1225,7 @@ function installSkillToScope(skillName, scopePath, scopeLabel, dryRun = false) {
     if (!fs.existsSync(scopePath)) fs.mkdirSync(scopePath, { recursive: true });
     copyDir(sourcePath, destPath);
     writeSkillMeta(destPath, {
-      sourceType: 'registry',
-      source: 'registry',
-      repo: 'MoizIbnYousaf/Ai-Agent-Skills',
-      url: 'https://github.com/MoizIbnYousaf/Ai-Agent-Skills',
-      skillName,
+      ...buildCatalogInstallMeta(skillName, scopePath),
       scope: scopeLabel,
     });
     success(`\nInstalled: ${skillName}`);
@@ -1073,49 +1285,51 @@ function buildCollectionInstallOperations(skills) {
   return operations;
 }
 
-async function installCollection(collectionId, parsed, installPaths) {
-  const data = loadSkillsJson();
-  const resolution = resolveCollection(data, collectionId);
-
-  if (!resolution.collection) {
-    warn(resolution.message);
-    if (resolution.unknown) {
-      printCollectionSuggestions(data);
-    }
-    return false;
-  }
-
-  if (resolution.message) {
-    info(resolution.message);
-  }
-
-  const orderedSkills = getCollectionSkillsInOrder(data, resolution.collection);
-  if (orderedSkills.length === 0) {
-    warn(`Collection "${resolution.collection.id}" has no installable skills.`);
-    return false;
-  }
-
-  const operations = buildCollectionInstallOperations(orderedSkills);
+function printCatalogInstallPlan(plan, installPaths, {dryRun = false, title = 'Install plan', summaryLine = null} = {}) {
+  const requestedCount = plan.requested.size;
   const targetList = installPaths.join(', ');
+  const usesSparseCheckout = plan.skills.some((skill) => skill.tier === 'upstream' && (skill.installSource || skill.source) !== skill.source);
 
-  if (parsed.dryRun) {
+  if (dryRun) {
     log(`\n${colors.bold}Dry Run${colors.reset} (no changes made)\n`);
-    info(`Would install collection: ${resolution.collection.title} [${resolution.collection.id}]`);
-    info(`Skills: ${orderedSkills.length}`);
-    info(`Targets: ${targetList}`);
-    orderedSkills.forEach((skill) => {
-      const sourceLabel = skill.tier === 'upstream'
-        ? `live from ${skill.installSource || skill.source}`
-        : 'bundled house copy';
-      log(`  ${colors.green}${skill.name}${colors.reset} ${colors.dim}(${sourceLabel})${colors.reset}`);
-    });
+  } else {
+    log(`\n${colors.bold}${title}${colors.reset}`);
+  }
+
+  if (summaryLine) {
+    info(summaryLine);
+  }
+  info(`Targets: ${targetList}`);
+  info(`Requested: ${requestedCount} skill${requestedCount === 1 ? '' : 's'}`);
+  info(`Resolved: ${plan.skills.length} skill${plan.skills.length === 1 ? '' : 's'}`);
+
+  if (plan.skills.length > plan.requested.size) {
+    info(`Dependency order: ${plan.orderedNames.join(' -> ')}`);
+  }
+  if (usesSparseCheckout) {
+    info('Clone mode: sparse checkout');
+  }
+
+  for (const skill of plan.skills) {
+    const sourceLabel = skill.tier === 'upstream'
+      ? `live from ${skill.installSource || skill.source}`
+      : 'bundled house copy';
+    const dependencyLabel = plan.requested.has(skill.name)
+      ? ''
+      : ` ${colors.dim}(dependency)${colors.reset}`;
+    log(`  ${colors.green}${skill.name}${colors.reset}${dependencyLabel} ${colors.dim}(${sourceLabel})${colors.reset}`);
+  }
+}
+
+async function installCatalogPlan(plan, installPaths, {dryRun = false, title = 'Installing skills', summaryLine = null, successLine = null} = {}) {
+  if (dryRun) {
+    printCatalogInstallPlan(plan, installPaths, {dryRun: true, title, summaryLine});
     return true;
   }
 
-  log(`\n${colors.bold}Installing Collection${colors.reset}`);
-  info(`${resolution.collection.title} [${resolution.collection.id}]`);
-  info(`Targets: ${targetList}`);
+  printCatalogInstallPlan(plan, installPaths, {dryRun: false, title, summaryLine});
 
+  const operations = buildCollectionInstallOperations(plan.skills);
   let completed = 0;
   let failed = 0;
 
@@ -1150,13 +1364,67 @@ async function installCollection(collectionId, parsed, installPaths) {
   }
 
   if (completed > 0) {
-    success(`\nCollection install finished: ${completed} skill${completed === 1 ? '' : 's'} completed`);
+    success(`\n${successLine || `Finished: ${completed} skill${completed === 1 ? '' : 's'} completed`}`);
   }
   if (failed > 0) {
-    warn(`${failed} skill${failed === 1 ? '' : 's'} failed during collection install`);
+    warn(`${failed} skill${failed === 1 ? '' : 's'} failed during install`);
   }
 
   return completed > 0;
+}
+
+async function installCatalogSkillFromLibrary(skillName, installPaths, dryRun = false) {
+  const data = loadSkillsJson();
+  const skill = findSkillByName(data, skillName);
+  if (!skill) {
+    for (const targetPath of installPaths) {
+      installSkill(skillName, null, dryRun, targetPath);
+    }
+    return false;
+  }
+
+  const plan = getCatalogInstallPlan(data, [skillName], false);
+  return installCatalogPlan(plan, installPaths, {
+    dryRun,
+    title: `Installing ${skillName}`,
+    summaryLine: `Would install: ${skillName}`,
+  });
+}
+
+async function installCollection(collectionId, parsed, installPaths) {
+  const data = loadSkillsJson();
+  const resolution = resolveCollection(data, collectionId);
+
+  if (!resolution.collection) {
+    warn(resolution.message);
+    if (resolution.unknown) {
+      printCollectionSuggestions(data);
+    }
+    return false;
+  }
+
+  if (resolution.message) {
+    info(resolution.message);
+  }
+
+  const orderedSkills = getCollectionSkillsInOrder(data, resolution.collection);
+  if (orderedSkills.length === 0) {
+    warn(`Collection "${resolution.collection.id}" has no installable skills.`);
+    return false;
+  }
+
+  const plan = getCatalogInstallPlan(
+    data,
+    orderedSkills.map((skill) => skill.name),
+    parsed.noDeps,
+  );
+
+  return installCatalogPlan(plan, installPaths, {
+    dryRun: parsed.dryRun,
+    title: 'Installing Collection',
+    summaryLine: `Would install collection: ${resolution.collection.title} [${resolution.collection.id}]`,
+    successLine: `Collection install finished: ${plan.skills.length} skill${plan.skills.length === 1 ? '' : 's'} completed`,
+  });
 }
 
 function showAgentInstructions(agent, skillName, destPath) {
@@ -1226,17 +1494,7 @@ function getInstalledSkills(agent = 'claude') {
 }
 
 function getInstalledSkillsInPath(destDir) {
-  if (!fs.existsSync(destDir)) return [];
-
-  try {
-    return fs.readdirSync(destDir).filter(name => {
-      const skillPath = path.join(destDir, name);
-      return fs.statSync(skillPath).isDirectory() &&
-             fs.existsSync(path.join(skillPath, 'SKILL.md'));
-    });
-  } catch (e) {
-    return [];
-  }
+  return listInstalledSkillNamesInDir(destDir);
 }
 
 function listInstalledSkills(agent = 'claude') {
@@ -1246,7 +1504,15 @@ function listInstalledSkills(agent = 'claude') {
 }
 
 function listInstalledSkillsInPath(destDir, label = 'global', installed = null) {
-  const resolvedInstalled = Array.isArray(installed) ? installed : getInstalledSkillsInPath(destDir);
+  let resolvedInstalled = Array.isArray(installed) ? installed : null;
+  if (!resolvedInstalled) {
+    if (label === 'global' || label === 'project') {
+      const installStateIndex = buildInstallStateIndex();
+      resolvedInstalled = getInstalledSkillNames(installStateIndex, label);
+    } else {
+      resolvedInstalled = getInstalledSkillsInPath(destDir);
+    }
+  }
 
   if (resolvedInstalled.length === 0) {
     warn(`No skills installed in ${label}`);
@@ -1262,45 +1528,46 @@ function listInstalledSkillsInPath(destDir, label = 'global', installed = null) 
   });
 
   if (label === 'project') {
-    log(`\n${colors.dim}Update:    npx ai-agent-skills update <name> --project${colors.reset}`);
+    log(`\n${colors.dim}Sync:      npx ai-agent-skills sync <name> --project${colors.reset}`);
     log(`${colors.dim}Uninstall: npx ai-agent-skills uninstall <name> --project${colors.reset}`);
     return;
   }
 
   if (label === 'global') {
-    log(`\n${colors.dim}Update:    npx ai-agent-skills update <name> --global${colors.reset}`);
+    log(`\n${colors.dim}Sync:      npx ai-agent-skills sync <name> --global${colors.reset}`);
     log(`${colors.dim}Uninstall: npx ai-agent-skills uninstall <name> --global${colors.reset}`);
     return;
   }
 
-  log(`\n${colors.dim}Update:    npx ai-agent-skills update <name> --agent ${label}${colors.reset}`);
+  log(`\n${colors.dim}Sync:      npx ai-agent-skills sync <name> --agent ${label}${colors.reset}`);
   log(`${colors.dim}Uninstall: npx ai-agent-skills uninstall <name> --agent ${label}${colors.reset}`);
 }
 
 function runDoctor(agentsToCheck = Object.keys(AGENT_PATHS)) {
   const checks = [];
+  const context = getActiveLibraryContext();
 
   try {
-    const data = loadSkillsJson();
+    const data = loadCatalogData(context);
     const vendoredSkills = (data.skills || []).filter(s => s.tier === 'house');
     const catalogedSkills = (data.skills || []).filter(s => s.tier === 'upstream');
     const missingSkills = vendoredSkills.filter((skill) => {
-      const skillPath = path.join(SKILLS_DIR, skill.name, 'SKILL.md');
+      const skillPath = path.join(context.skillsDir, skill.name, 'SKILL.md');
       return !fs.existsSync(skillPath);
     });
 
     const vendoredCount = vendoredSkills.length;
     const catalogedCount = catalogedSkills.length;
     checks.push({
-      name: 'Bundled library',
+      name: context.mode === 'workspace' ? 'Workspace library' : 'Bundled library',
       pass: missingSkills.length === 0,
       detail: missingSkills.length === 0
         ? `${vendoredCount} vendored + ${catalogedCount} cataloged upstream across ${getCollections(data).length} collections`
-        : `Missing bundled SKILL.md for ${missingSkills.map((skill) => skill.name).join(', ')}`,
+        : `Missing SKILL.md for ${missingSkills.map((skill) => skill.name).join(', ')}`,
     });
   } catch (e) {
     checks.push({
-      name: 'Bundled library',
+      name: context.mode === 'workspace' ? 'Workspace library' : 'Bundled library',
       pass: false,
       detail: `Failed to load skills.json: ${e.message}`,
     });
@@ -1402,18 +1669,24 @@ function runValidate(targetPath) {
   }
 }
 
-// Update from bundled registry
-function updateFromRegistry(skillName, targetLabel, destPath, dryRun) {
-  const sourcePath = path.join(SKILLS_DIR, skillName);
+// Update from the library catalog
+function updateFromRegistry(skillName, targetLabel, destPath, dryRun, meta = null) {
+  const catalogContext = getCatalogContextFromMeta(meta);
+  if (!catalogContext) {
+    error('The workspace library for this installed skill is unavailable.');
+    log(`${colors.dim}Run this command from inside the workspace or reinstall the skill.${colors.reset}`);
+    return false;
+  }
+  const sourcePath = path.join(catalogContext.skillsDir, skillName);
 
   if (!fs.existsSync(sourcePath)) {
-    error(`Skill "${skillName}" not found in repository.`);
+    error(`Skill "${skillName}" not found in ${catalogContext.mode === 'workspace' ? 'workspace' : 'bundled'} library.`);
     return false;
   }
 
   if (dryRun) {
     log(`\n${colors.bold}Dry Run${colors.reset} (no changes made)\n`);
-    info(`Would update: ${skillName} (from registry)`);
+    info(`Would update: ${skillName} (from catalog)`);
     info(`Target: ${targetLabel}`);
     info(`Path: ${destPath}`);
     return true;
@@ -1425,11 +1698,8 @@ function updateFromRegistry(skillName, targetLabel, destPath, dryRun) {
 
     // Write metadata
     writeSkillMeta(destPath, {
-      sourceType: 'registry',
-      source: 'registry',
-      repo: 'MoizIbnYousaf/Ai-Agent-Skills',
-      url: 'https://github.com/MoizIbnYousaf/Ai-Agent-Skills',
-      skillName,
+      ...(meta || {}),
+      ...buildCatalogInstallMeta(skillName, path.dirname(destPath), catalogContext),
       scope: resolveScopeLabel(path.dirname(destPath)),
     });
 
@@ -1656,7 +1926,7 @@ function updateSkillInPath(skillName, destDir, targetLabel = 'global', dryRun = 
     case 'catalog':
     case 'registry':
     default:
-      return updateFromRegistry(skillName, targetLabel, destPath, dryRun);
+      return updateFromRegistry(skillName, targetLabel, destPath, dryRun, meta);
   }
 }
 
@@ -1673,7 +1943,7 @@ function updateAllSkillsInPath(destDir, targetLabel = 'global', dryRun = false) 
     return;
   }
 
-  log(`\n${colors.bold}Updating ${installed.length} skill(s) in ${targetLabel}...${colors.reset}\n`);
+  log(`\n${colors.bold}Syncing ${installed.length} skill(s) in ${targetLabel}...${colors.reset}\n`);
 
   let updated = 0;
   let failed = 0;
@@ -1686,13 +1956,14 @@ function updateAllSkillsInPath(destDir, targetLabel = 'global', dryRun = false) 
     }
   }
 
-  log(`\n${colors.bold}Summary:${colors.reset} ${updated} updated, ${failed} failed`);
+  log(`\n${colors.bold}Summary:${colors.reset} ${updated} refreshed, ${failed} failed`);
 }
 
 // ============ LISTING AND SEARCH ============
 
 function listSkills(category = null, tags = null, collectionId = null, workArea = null) {
   const data = loadSkillsJson();
+  const installStateIndex = buildInstallStateIndex();
   let skills = data.skills || [];
 
   // Filter by category
@@ -1752,6 +2023,7 @@ function listSkills(category = null, tags = null, collectionId = null, workArea 
       const featured = skill.featured ? ` ${colors.yellow}*${colors.reset}` : '';
       const verified = skill.verified ? ` ${colors.green}✓${colors.reset}` : '';
       const tierBadge = ` ${getTierBadge(skill)}`;
+      const installStateLabel = getInstallStateText(skill.name, installStateIndex);
       const tagStr = skill.tags && skill.tags.length > 0
         ? ` ${colors.dim}[${skill.tags.slice(0, 3).join(', ')}]${colors.reset}`
         : '';
@@ -1759,7 +2031,7 @@ function listSkills(category = null, tags = null, collectionId = null, workArea 
         ? ` ${colors.dim}{${getCollectionBadgeText(data, skill)}}${colors.reset}`
         : '';
 
-      log(`  ${colors.green}${skill.name}${colors.reset}${featured}${verified}${tierBadge}${tagStr}${collectionBadge}`);
+      log(`  ${colors.green}${skill.name}${colors.reset}${featured}${verified}${tierBadge}${installStateLabel ? ` ${colorizeInstallStateLabel(installStateLabel)}` : ''}${tagStr}${collectionBadge}`);
       log(`    ${colors.dim}${getSkillMeta(skill, false)}${colors.reset}`);
 
       const shelfNote = skill.whyHere || skill.description;
@@ -1804,6 +2076,7 @@ function listSkills(category = null, tags = null, collectionId = null, workArea 
         const featured = skill.featured ? ` ${colors.yellow}*${colors.reset}` : '';
         const verified = skill.verified ? ` ${colors.green}✓${colors.reset}` : '';
         const tierBadge = ` ${getTierBadge(skill)}`;
+        const installStateLabel = getInstallStateText(skill.name, installStateIndex);
         const tagStr = skill.tags && skill.tags.length > 0
           ? ` ${colors.dim}[${skill.tags.slice(0, 3).join(', ')}]${colors.reset}`
           : '';
@@ -1811,7 +2084,7 @@ function listSkills(category = null, tags = null, collectionId = null, workArea 
           ? ` ${colors.dim}{${getCollectionBadgeText(data, skill)}}${colors.reset}`
           : '';
 
-        log(`  ${colors.green}${skill.name}${colors.reset}${featured}${verified}${tierBadge}${tagStr}${collectionBadge}`);
+        log(`  ${colors.green}${skill.name}${colors.reset}${featured}${verified}${tierBadge}${installStateLabel ? ` ${colorizeInstallStateLabel(installStateLabel)}` : ''}${tagStr}${collectionBadge}`);
         log(`    ${colors.dim}${getSkillMeta(skill, false)}${colors.reset}`);
 
         const shelfNote = skill.whyHere || skill.description;
@@ -1833,6 +2106,7 @@ function listSkills(category = null, tags = null, collectionId = null, workArea 
 
 function searchSkills(query, category = null, collectionId = null, workArea = null) {
   const data = loadSkillsJson();
+  const installStateIndex = buildInstallStateIndex();
   let skills = data.skills || [];
   const q = query.toLowerCase();
 
@@ -1894,6 +2168,7 @@ function searchSkills(query, category = null, collectionId = null, workArea = nu
   log(`\n${colors.bold}Search Results${colors.reset} (${rankedMatches.length} matches${scope})\n`);
 
   rankedMatches.forEach(skill => {
+    const installStateLabel = getInstallStateText(skill.name, installStateIndex);
     const tagStr = skill.tags && skill.tags.length > 0
       ? ` ${colors.magenta}[${skill.tags.slice(0, 3).join(', ')}]${colors.reset}`
       : '';
@@ -1904,7 +2179,7 @@ function searchSkills(query, category = null, collectionId = null, workArea = nu
     const label = getSkillWorkArea(skill) && getSkillBranch(skill)
       ? `${formatWorkAreaTitle(getSkillWorkArea(skill))} / ${getSkillBranch(skill)}`
       : skill.category;
-    log(`${colors.green}${skill.name}${colors.reset} ${colors.dim}[${label}]${colors.reset}${tagStr}${collectionBadge}`);
+    log(`${colors.green}${skill.name}${colors.reset} ${colors.dim}[${label}]${colors.reset}${installStateLabel ? ` ${colorizeInstallStateLabel(installStateLabel)}` : ''}${tagStr}${collectionBadge}`);
     log(`  ${colors.dim}${getOrigin(skill)} · ${getTrust(skill)} · ${skill.source}${colors.reset}`);
 
     const desc = skill.description.length > 75
@@ -1917,6 +2192,7 @@ function searchSkills(query, category = null, collectionId = null, workArea = nu
 
 function showCollections() {
   const data = loadSkillsJson();
+  const installStateIndex = buildInstallStateIndex();
   const collections = getCollections(data);
 
   if (collections.length === 0) {
@@ -1931,11 +2207,12 @@ function showCollections() {
     const startHere = getCollectionStartHere(collection);
     const sample = collection.skills.slice(0, 4).join(', ');
     const more = collection.skills.length > 4 ? ', ...' : '';
+    const installedCount = collection.skills.filter((skillName) => getInstallState(installStateIndex, skillName).installed).length;
 
     log(`${colors.blue}${colors.bold}${collection.title}${colors.reset} ${colors.dim}[${collection.id}]${colors.reset}`);
     log(`  ${colors.dim}${collection.description}${colors.reset}`);
     log(`  ${colors.dim}Start here:${colors.reset} ${startHere.join(', ')}`);
-    log(`  ${colors.green}${collection.skills.length} skills${colors.reset} · ${sample}${more}`);
+    log(`  ${colors.green}${collection.skills.length} skills${colors.reset} · ${installedCount} installed · ${sample}${more}`);
     log(`  ${colors.dim}npx ai-agent-skills list --collection ${collection.id}${colors.reset}\n`);
     log(`  ${colors.dim}npx ai-agent-skills install --collection ${collection.id} -p${colors.reset}\n`);
   });
@@ -1948,7 +2225,7 @@ function getBundledSkillFilePath(skillName) {
     return null;
   }
 
-  const skillPath = path.join(SKILLS_DIR, skillName, 'SKILL.md');
+  const skillPath = path.join(getActiveSkillsDir(), skillName, 'SKILL.md');
   if (!fs.existsSync(skillPath)) {
     return null;
   }
@@ -2389,6 +2666,11 @@ function buildInstallSourceRef(parsed, relativeDir = null) {
 
   if (parsed.type === 'github') {
     const repoId = buildRepoId(parsed);
+    if (parsed.ref) {
+      return cleanRelativeDir
+        ? `https://github.com/${repoId}/tree/${parsed.ref}/${cleanRelativeDir}`
+        : `https://github.com/${repoId}/tree/${parsed.ref}`;
+    }
     return cleanRelativeDir ? `${repoId}/${cleanRelativeDir}` : repoId;
   }
 
@@ -2470,6 +2752,10 @@ function uniqueSkillFilters(filters = []) {
 // ============ CATALOG COMMAND ============
 
 async function catalogSkills(source, options = {}) {
+  const context = requireEditableLibraryContext('catalog');
+  if (!context) {
+    return false;
+  }
   const parsed = parseSource(source);
 
   if (!parsed || parsed.type !== 'github') {
@@ -2561,7 +2847,7 @@ async function catalogSkills(source, options = {}) {
       parsed,
       discoveredSkill: target,
       fields,
-    });
+    }, context);
 
     success(`Cataloged ${target.name}`);
     log(`${colors.dim}${formatWorkAreaTitle(fields.workArea)} / ${fields.branch} · ${buildRepoId(parsed)}${colors.reset}`);
@@ -2579,6 +2865,10 @@ async function catalogSkills(source, options = {}) {
 }
 
 async function vendorSkill(source, options = {}) {
+  const context = requireEditableLibraryContext('vendor');
+  if (!context) {
+    return false;
+  }
   const parsed = parseSource(source);
   if (!parsed || parsed.type === 'catalog') {
     error('Vendor requires an upstream repo, git URL, or local path.');
@@ -2676,14 +2966,14 @@ async function vendorSkill(source, options = {}) {
       sourceLabel,
     });
 
-    const catalog = loadCatalogData();
+    const catalog = loadCatalogData(context);
     if (findSkillByName(catalog, rawEntry.name)) {
       throw new Error(`Skill "${rawEntry.name}" already exists in the catalog`);
     }
 
     const entry = buildHouseCatalogEntry(rawEntry, catalog);
-    const destDir = path.join(SKILLS_DIR, entry.name);
-    tempDestDir = path.join(SKILLS_DIR, `.${entry.name}.tmp-${Date.now()}`);
+    const destDir = path.join(context.skillsDir, entry.name);
+    tempDestDir = path.join(context.skillsDir, `.${entry.name}.tmp-${Date.now()}`);
 
     if (fs.existsSync(destDir)) {
       throw new Error(`Folder skills/${entry.name}/ already exists`);
@@ -2702,7 +2992,7 @@ async function vendorSkill(source, options = {}) {
     fs.renameSync(tempDestDir, destDir);
 
     try {
-      addHouseSkillEntry(entry);
+      addHouseSkillEntry(entry, context);
     } catch (err) {
       fs.rmSync(destDir, { recursive: true, force: true });
       throw err;
@@ -2725,7 +3015,88 @@ async function vendorSkill(source, options = {}) {
   }
 }
 
+async function addBundledSkillToWorkspace(skillName, options = {}) {
+  const context = requireWorkspaceContext('add');
+  if (!context) {
+    return false;
+  }
+
+  const bundledSkill = getBundledCatalogSkill(skillName);
+  if (!bundledSkill) {
+    error(`Bundled skill "${skillName}" not found.`);
+    process.exitCode = 1;
+    return false;
+  }
+
+  const workspaceData = loadCatalogData(context);
+  if (findSkillByName(workspaceData, bundledSkill.name)) {
+    error(`Skill "${bundledSkill.name}" already exists in this workspace.`);
+    process.exitCode = 1;
+    return false;
+  }
+
+  try {
+    const fields = await promptForEditorialFields({
+      category: options.category || bundledSkill.category || 'development',
+      workArea: options.area || '',
+      branch: options.branch || '',
+      whyHere: options.whyHere || '',
+      tags: Array.isArray(bundledSkill.tags) ? bundledSkill.tags.join(', ') : '',
+      labels: Array.isArray(bundledSkill.labels) ? bundledSkill.labels.join(', ') : '',
+      notes: options.notes || '',
+      trust: options.trust || 'listed',
+      collections: options.collections || '',
+    }, {
+      mode: 'add',
+      title: 'Add bundled skill to this workspace',
+      promptOptional: true,
+      skillName: bundledSkill.name,
+      sourceLabel: bundledSkill.source,
+    });
+
+    const collectionIds = ensureCollectionIdsExist(fields.collections, workspaceData);
+    const entry = buildImportedCatalogEntryFromBundledSkill(bundledSkill, fields);
+
+    commitCatalogData({
+      ...workspaceData,
+      updated: currentCatalogTimestamp(),
+      skills: [...workspaceData.skills, entry],
+      collections: addSkillToCollections(workspaceData.collections, entry.name, collectionIds),
+    }, context);
+
+    success(`Added ${entry.name} to the workspace library`);
+    log(`${colors.dim}${formatWorkAreaTitle(entry.workArea)} / ${entry.branch} · ${entry.source}${colors.reset}`);
+    return true;
+  } catch (err) {
+    error(err && err.message ? err.message : String(err));
+    process.exitCode = 1;
+    return false;
+  }
+}
+
+async function addSkillToWorkspace(source, options = {}) {
+  const context = requireWorkspaceContext('add');
+  if (!context) {
+    return false;
+  }
+
+  const parsed = parseSource(source);
+  if (!parsed || parsed.type === 'catalog') {
+    return addBundledSkillToWorkspace(source, options);
+  }
+
+  if (parsed.type === 'github') {
+    return catalogSkills(source, options);
+  }
+
+  return vendorSkill(source, options);
+}
+
 function runCurateCommand(skillName, parsed) {
+  const context = requireEditableLibraryContext('curate');
+  if (!context) {
+    return false;
+  }
   if (!skillName) {
     error('Please specify a skill name or "review".');
     log('Usage: npx ai-agent-skills curate <skill-name> [flags]');
@@ -2735,7 +3106,7 @@ function runCurateCommand(skillName, parsed) {
   }
 
   if (skillName === 'review') {
-    const queue = buildReviewQueue(loadCatalogData());
+    const queue = buildReviewQueue(loadCatalogData(context));
     log(`\n${colors.bold}Needs Review${colors.reset}\n`);
     log(formatReviewQueue(queue));
     log('');
@@ -2748,16 +3119,16 @@ function runCurateCommand(skillName, parsed) {
       process.exitCode = 1;
       return false;
     }
-    const data = loadCatalogData();
+    const data = loadCatalogData(context);
     const target = findSkillByName(data, skillName);
     if (!target) {
       error(`Skill "${skillName}" not found in catalog.`);
       process.exitCode = 1;
       return false;
     }
-    removeSkillFromCatalog(skillName);
+    removeSkillFromCatalog(skillName, context);
     if (target.tier === 'house') {
-      const bundledDir = path.join(SKILLS_DIR, skillName);
+      const bundledDir = path.join(context.skillsDir, skillName);
       if (fs.existsSync(bundledDir)) {
         fs.rmSync(bundledDir, { recursive: true, force: true });
       }
@@ -2774,7 +3145,7 @@ function runCurateCommand(skillName, parsed) {
     return false;
   }
 
-  curateSkill(skillName, changes);
+  curateSkill(skillName, changes, context);
   success(`Updated ${skillName}`);
   return true;
 }
@@ -2990,9 +3361,11 @@ function installFromLocalPath(source, agent = 'claude', dryRun = false) {
 // ============ INFO AND HELP ============
 
 function showHelp() {
+  const libraryHint = getLibraryModeHint();
+  const activeLibraryLine = libraryHint ? `\n${libraryHint}\n` : '\n';
   log(`
 ${colors.bold}AI Agent Skills${colors.reset}
-Curated agent skills library and installer
+Curated agent skills library and installer${activeLibraryLine}
 
 ${colors.bold}Usage:${colors.reset}
   npx ai-agent-skills [command] [options]
@@ -3001,6 +3374,7 @@ ${colors.bold}Commands:${colors.reset}
   ${colors.green}browse${colors.reset}                Browse the library in the terminal
   ${colors.green}swift${colors.reset}                 Install the curated Swift hub
   ${colors.green}install <source>${colors.reset}      Install skills from the library, a collection, GitHub, git URL, or a local path
+  ${colors.green}add <source>${colors.reset}          Add a bundled pick, upstream repo skill, or house copy to a workspace
   ${colors.green}list${colors.reset}                  List catalog skills
   ${colors.green}search <query>${colors.reset}        Search the catalog
   ${colors.green}info <name>${colors.reset}           Show skill details and provenance
@@ -3008,9 +3382,12 @@ ${colors.bold}Commands:${colors.reset}
   ${colors.green}collections${colors.reset}           Browse curated collections
   ${colors.green}curate <name>${colors.reset}         Edit shelf placement and catalog metadata
   ${colors.green}uninstall <name>${colors.reset}      Remove an installed skill
-  ${colors.green}update [name]${colors.reset}         Update installed skills
+  ${colors.green}sync [name]${colors.reset}           Refresh installed skills
+  ${colors.green}update [name]${colors.reset}         Compatibility alias for sync
   ${colors.green}check${colors.reset}                 Check for available updates
   ${colors.green}init [name]${colors.reset}           Create a new SKILL.md template
+  ${colors.green}init-library <name>${colors.reset}   Create a managed library workspace
+  ${colors.green}build-docs${colors.reset}            Regenerate README.md and WORK_AREAS.md in a workspace
   ${colors.green}config${colors.reset}                Manage CLI settings
   ${colors.green}catalog <repo>${colors.reset}       Add upstream skills to the catalog (no local copy)
   ${colors.green}vendor <source>${colors.reset}       Create a house copy from an explicit source
@@ -3042,16 +3419,11 @@ ${colors.bold}Options:${colors.reset}
   ${colors.cyan}--yes${colors.reset}                 Skip prompts (for CI/CD)
   ${colors.cyan}--all${colors.reset}                 Install to both global and project scopes
   ${colors.cyan}--dry-run${colors.reset}             Show what would be installed
+  ${colors.cyan}--no-deps${colors.reset}             Skip dependency expansion for catalog installs
   ${colors.cyan}--agent <name>${colors.reset}        Install to a specific agent path (legacy)
 
 ${colors.bold}Categories:${colors.reset}
   development, document, creative, business, productivity
-
-${colors.bold}Work areas:${colors.reset}
-  frontend, backend, mobile, workflow, agent-engineering
-
-${colors.bold}Collections:${colors.reset}
-  my-picks, build-apps, build-systems, test-and-debug, docs-and-research, swift-agent-skills
 
 ${colors.bold}Examples:${colors.reset}
   npx ai-agent-skills                            Launch the terminal browser
@@ -3059,6 +3431,10 @@ ${colors.bold}Examples:${colors.reset}
   npx ai-agent-skills install frontend-design    Install to ~/.claude/skills/
   npx ai-agent-skills install pdf -p             Install to .agents/skills/
   npx ai-agent-skills install --collection swift-agent-skills -p
+  npx ai-agent-skills init-library my-library    Create a managed workspace
+  npx ai-agent-skills add frontend-design --area frontend --branch Implementation --why "I want this in my own library."
+  npx ai-agent-skills sync frontend-design -p    Refresh one installed skill in project scope
+  npx ai-agent-skills build-docs                 Regenerate workspace docs
   npx ai-agent-skills anthropics/skills          Install repo skills to Claude + Codex
   npx ai-agent-skills install anthropics/skills  Install all skills from repo
   npx ai-agent-skills search workflow            Search the catalog
@@ -3070,12 +3446,15 @@ ${colors.bold}Legacy agents:${colors.reset}
   Still supported via --agent <name>: cursor, amp, codex, gemini, goose, opencode, letta, kilocode
 
 ${colors.bold}More info:${colors.reset}
+  Use ${colors.cyan}list${colors.reset} and ${colors.cyan}collections${colors.reset} to inspect the active library
   https://github.com/MoizIbnYousaf/Ai-Agent-Skills
 `);
 }
 
 function showInfo(skillName) {
   const data = loadSkillsJson();
+  const installStateIndex = buildInstallStateIndex();
+  const dependencyGraph = buildDependencyGraph(data);
   const skill = data.skills.find(s => s.name === skillName);
 
   if (!skill) {
@@ -3103,6 +3482,9 @@ function showInfo(skillName) {
   const whyHere = skill.whyHere || 'This skill still earns a place in the library.';
   const alsoLookAt = getSiblingRecommendations(data, skill, 3).map(candidate => candidate.name).join(', ') || 'none';
   const upstreamInstall = getGitHubInstallSpec(skill, 'cursor');
+  const installStateLabel = getInstallStateText(skill.name, installStateIndex) || 'not installed in the standard scopes';
+  const dependsOn = dependencyGraph.requiresMap.get(skill.name) || [];
+  const usedBy = dependencyGraph.requiredByMap.get(skill.name) || [];
   const lastVerifiedLine = skill.lastVerified
     ? `${colors.bold}Last Verified:${colors.reset} ${skill.lastVerified}\n`
     : '';
@@ -3127,7 +3509,10 @@ ${colors.bold}Provenance:${colors.reset}
   Distribution: ${getDistribution(skill) === 'bundled' ? 'Bundled with this library' : `Live install from ${skill.installSource || skill.source}`}
   Trust: ${getTrust(skill)} · Origin: ${getOrigin(skill)}
   Sync Mode: ${syncMode}
+  Install Status: ${installStateLabel}
   Collections: ${collectionStr}
+  Depends On: ${dependsOn.length > 0 ? dependsOn.join(', ') : 'none'}
+  Used By: ${usedBy.length > 0 ? usedBy.join(', ') : 'none'}
   Source Repo: ${skill.source}
   Source URL: ${sourceUrl}
 
@@ -3239,6 +3624,151 @@ Specific failure modes or non-obvious behaviors the agent would hit without this
   return true;
 }
 
+function buildWorkspaceReadmeTemplate(libraryName) {
+  return `<h1 align="center">${libraryName}</h1>
+
+<p align="center">
+  <strong>A personal library of agent skills.</strong>
+</p>
+
+<p align="center">
+  Your own shelves, managed with ai-agent-skills.
+</p>
+
+<!-- GENERATED:library-stats:start -->
+<!-- GENERATED:library-stats:end -->
+
+## Library
+
+This workspace is your library root.
+
+Use \`ai-agent-skills\` to keep the catalog, house copies, and generated docs in sync.
+
+## Shelves
+
+<!-- GENERATED:shelf-table:start -->
+<!-- GENERATED:shelf-table:end -->
+
+## Collections
+
+<!-- GENERATED:collection-table:start -->
+<!-- GENERATED:collection-table:end -->
+
+## Sources
+
+<!-- GENERATED:source-table:start -->
+<!-- GENERATED:source-table:end -->
+`;
+}
+
+function createStarterLibraryData(libraryName, librarySlug) {
+  const pkg = require('./package.json');
+  return {
+    version: pkg.version,
+    updated: currentCatalogTimestamp(),
+    total: 0,
+    workAreas: [
+      {
+        id: 'frontend',
+        title: 'Frontend',
+        description: 'Interfaces, design systems, browser work, and product polish.',
+      },
+      {
+        id: 'backend',
+        title: 'Backend',
+        description: 'Systems, data, security, and runtime operations.',
+      },
+      {
+        id: 'workflow',
+        title: 'Workflow',
+        description: 'Files, docs, planning, and release work.',
+      },
+    ],
+    collections: [],
+    skills: [],
+    libraryName,
+    librarySlug,
+  };
+}
+
+function initLibrary(name) {
+  const libraryName = String(name || '').trim();
+  if (!libraryName) {
+    error('Please provide a workspace name.');
+    log('Usage: npx ai-agent-skills init-library <name>');
+    process.exitCode = 1;
+    return false;
+  }
+
+  const librarySlug = slugifyLibraryName(libraryName);
+  if (!librarySlug) {
+    error('The workspace name needs at least one letter or number.');
+    process.exitCode = 1;
+    return false;
+  }
+
+  const targetDir = path.resolve(process.cwd(), librarySlug);
+  if (isManagedWorkspaceRoot(targetDir)) {
+    error(`Workspace already initialized at ${targetDir}`);
+    process.exitCode = 1;
+    return false;
+  }
+
+  if (fs.existsSync(targetDir)) {
+    const existing = fs.readdirSync(targetDir);
+    if (existing.length > 0) {
+      error(`Refusing to overwrite existing directory: ${targetDir}`);
+      process.exitCode = 1;
+      return false;
+    }
+  } else {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+
+  const workspaceContext = createLibraryContext(targetDir, 'workspace');
+  const starterData = createStarterLibraryData(libraryName, librarySlug);
+  const workspaceConfig = {
+    libraryName,
+    librarySlug,
+    mode: 'workspace',
+  };
+
+  fs.mkdirSync(workspaceContext.workspaceDir, { recursive: true });
+  fs.mkdirSync(workspaceContext.skillsDir, { recursive: true });
+  fs.writeFileSync(path.join(workspaceContext.skillsDir, '.gitkeep'), '');
+  fs.writeFileSync(workspaceContext.workspaceConfigPath, `${JSON.stringify(workspaceConfig, null, 2)}\n`);
+  fs.writeFileSync(workspaceContext.readmePath, buildWorkspaceReadmeTemplate(libraryName));
+  fs.writeFileSync(workspaceContext.skillsJsonPath, `${JSON.stringify(starterData, null, 2)}\n`);
+  writeGeneratedDocs(starterData, workspaceContext);
+
+  success(`Created library workspace: ${libraryName}`);
+  info(`Path: ${targetDir}`);
+  log(`\n${colors.dim}Next steps:${colors.reset}`);
+  log(`  cd ${librarySlug}`);
+  log(`  npx ai-agent-skills add frontend-design --area frontend --branch Implementation --why "I want this on my shelf."`);
+  log(`  npx ai-agent-skills list`);
+  log(`  npx ai-agent-skills build-docs`);
+  return true;
+}
+
+function buildDocs() {
+  const context = requireWorkspaceContext('build-docs');
+  if (!context) return false;
+
+  try {
+    const data = loadCatalogData(context);
+    writeGeneratedDocs(data, context);
+    success('Regenerated workspace docs');
+    info(`README: ${context.readmePath}`);
+    info(`Work areas: ${context.workAreasPath}`);
+    return true;
+  } catch (e) {
+    error(`Failed to build docs: ${e.message}`);
+    process.exitCode = 1;
+    return false;
+  }
+}
+
 // ============ CHECK COMMAND ============
 
 function checkSkills(scope) {
@@ -3294,9 +3824,13 @@ function checkSkills(scope) {
             updatesAvailable++;
           }
         } else if (sourceType === 'catalog' || sourceType === 'registry') {
-          // Check against bundled catalog
-          const bundledPath = path.join(SKILLS_DIR, entry.name);
-          if (fs.existsSync(bundledPath)) {
+          const catalogContext = getCatalogContextFromMeta(meta);
+          if (!catalogContext) {
+            log(`  ${colors.dim}?${colors.reset} ${entry.name}${colors.dim}      workspace source unavailable (run from inside the workspace or reinstall)${colors.reset}`);
+            continue;
+          }
+          const catalogPath = path.join(catalogContext.skillsDir, entry.name);
+          if (fs.existsSync(catalogPath)) {
             log(`  ${colors.green}\u2713${colors.reset} ${entry.name}${colors.dim}      up to date${colors.reset}`);
           } else {
             log(`  ${colors.dim}?${colors.reset} ${entry.name}${colors.dim}      not in current catalog${colors.reset}`);
@@ -3317,9 +3851,10 @@ function checkSkills(scope) {
 
   log('');
   if (updatesAvailable > 0) {
-    log(`${updatesAvailable} update(s) may be available. Run ${colors.cyan}npx ai-agent-skills update${colors.reset} to install.`);
+    log(`${updatesAvailable} update(s) may be available. Run ${colors.cyan}npx ai-agent-skills sync${colors.reset} to refresh them.`);
   } else {
     log(`${colors.dim}All ${checked} skill(s) checked.${colors.reset}`);
+    log(`${colors.dim}Use npx ai-agent-skills sync when you want to refresh installed skills anyway.${colors.reset}`);
   }
 }
 
@@ -3327,6 +3862,7 @@ function checkSkills(scope) {
 
 async function main() {
   const args = process.argv.slice(2);
+  setActiveLibraryContext(resolveLibraryContext(process.cwd()));
   const parsed = parseArgs(args);
   const {
     command,
@@ -3335,6 +3871,7 @@ async function main() {
     explicitAgent,
     installed,
     dryRun,
+    noDeps,
     category,
     workArea,
     collection,
@@ -3355,7 +3892,6 @@ async function main() {
     listMode,
     yes,
   } = parsed;
-  const ALL_AGENTS = Object.keys(AGENT_PATHS);
   const managedTargets = resolveManagedTargets(parsed);
 
   if (!command) {
@@ -3369,10 +3905,10 @@ async function main() {
     const action = await launchBrowser({agent: tuiAgent, scope: tuiScope});
     if (action && action.type === 'install') {
       if (action.agent) {
-        installSkill(action.skillName, action.agent, false);
+        await installCatalogSkillFromLibrary(action.skillName, [AGENT_PATHS[action.agent] || SCOPES.global], false);
       } else {
         const scopePath = SCOPES[action.scope || 'global'];
-        installSkillToScope(action.skillName, scopePath, action.scope || 'global', false);
+        await installCatalogSkillFromLibrary(action.skillName, [scopePath], false);
       }
     } else if (action && action.type === 'github-install') {
       await installFromGitHub(action.source, agents[0], false);
@@ -3383,13 +3919,19 @@ async function main() {
   }
 
   if (command === SWIFT_SHORTCUT) {
-    if (listMode) {
-      listSkills(category, tags, 'swift-agent-skills', workArea);
-      return;
-    }
+    const previousContext = getActiveLibraryContext();
+    setActiveLibraryContext(getBundledLibraryContext());
+    try {
+      if (listMode) {
+        listSkills(category, tags, 'swift-agent-skills', workArea);
+        return;
+      }
 
-    const swiftInstallPaths = resolveInstallPath(parsed, { defaultAgents: UNIVERSAL_DEFAULT_AGENTS });
-    await installCollection('swift-agent-skills', parsed, swiftInstallPaths);
+      const swiftInstallPaths = resolveInstallPath(parsed, { defaultAgents: UNIVERSAL_DEFAULT_AGENTS });
+      await installCollection('swift-agent-skills', parsed, swiftInstallPaths);
+    } finally {
+      setActiveLibraryContext(previousContext);
+    }
     return;
   }
 
@@ -3435,10 +3977,10 @@ async function main() {
       const action = await launchBrowser({agent: browseAgent, scope: browseScope});
       if (action && action.type === 'install') {
         if (action.agent) {
-          installSkill(action.skillName, action.agent, false);
+          await installCatalogSkillFromLibrary(action.skillName, [AGENT_PATHS[action.agent] || SCOPES.global], false);
         } else {
           const scopePath = SCOPES[action.scope || 'global'];
-          installSkillToScope(action.skillName, scopePath, action.scope || 'global', false);
+          await installCatalogSkillFromLibrary(action.skillName, [scopePath], false);
         }
       } else if (action && action.type === 'github-install') {
         await installFromGitHub(action.source, agents[0], false);
@@ -3465,8 +4007,7 @@ async function main() {
       return;
 
     case 'install':
-    case 'i':
-    case 'add': {
+    case 'i': {
       if (!param && !collection) {
         error('Please specify a skill name, collection, GitHub repo, or local path.');
         log('Usage: npx ai-agent-skills install <source> [-p]');
@@ -3483,14 +4024,55 @@ async function main() {
       const source = parseSource(param);
 
       if (source.type === 'catalog') {
-        // Install from bundled library (original flow)
-        for (const targetPath of installPaths) {
-          installSkill(source.name, null, dryRun, targetPath);
+        const data = loadSkillsJson();
+        const skill = findSkillByName(data, source.name);
+        if (!skill) {
+          for (const targetPath of installPaths) {
+            installSkill(source.name, null, dryRun, targetPath);
+          }
+          return;
         }
+        const plan = getCatalogInstallPlan(data, [source.name], noDeps);
+        await installCatalogPlan(plan, installPaths, {
+          dryRun,
+          title: `Installing ${source.name}`,
+          summaryLine: `Would install: ${source.name}`,
+        });
       } else {
         // Source-repo install (v3 flow)
         await installFromSource(param, source, installPaths, skillFilters, listMode, yes, dryRun);
       }
+      return;
+    }
+
+    case 'add': {
+      if (!param) {
+        error('Please specify a bundled skill name, GitHub repo, git URL, or local path.');
+        log('Usage: npx ai-agent-skills add <source>');
+        log('       npx ai-agent-skills add <catalog-skill-name> --area <shelf> --branch <branch> --why "Why it belongs."');
+        process.exit(1);
+      }
+
+      await addSkillToWorkspace(param, {
+        list: listMode,
+        skillFilter: skillFilters.length > 0 ? skillFilters[0] : null,
+        area: workArea,
+        branch,
+        category,
+        tags,
+        labels,
+        notes,
+        trust,
+        whyHere: why,
+        description,
+        collections: collection,
+        lastVerified,
+        featured,
+        clearVerified,
+        remove,
+        ref: getArgValue(process.argv, '--ref'),
+        dryRun,
+      });
       return;
     }
 
@@ -3507,6 +4089,7 @@ async function main() {
       }
       return;
 
+    case 'sync':
     case 'update':
     case 'upgrade':
       if (all) {
@@ -3515,8 +4098,8 @@ async function main() {
         }
       } else if (!param) {
         error('Please specify a skill name or use --all.');
-        log('Usage: npx ai-agent-skills update <name> [--agents claude,cursor]');
-        log('       npx ai-agent-skills update --all [--agents claude,cursor]');
+        log('Usage: npx ai-agent-skills sync <name> [--agents claude,cursor]');
+        log('       npx ai-agent-skills sync --all [--agents claude,cursor]');
         process.exit(1);
       } else {
         for (const target of managedTargets) {
@@ -3627,6 +4210,14 @@ async function main() {
 
     case 'init':
       initSkill(param);
+      return;
+
+    case 'init-library':
+      initLibrary(param);
+      return;
+
+    case 'build-docs':
+      buildDocs();
       return;
 
     case 'check':

@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const {buildCatalog, getInstallCommand, getInstallCommandForAgent, getSiblingRecommendations, getSkillsInstallSpec} = require('./catalog.cjs');
 const {buildReviewQueue} = require('../lib/catalog-mutations.cjs');
 const {loadCatalogData} = require('../lib/catalog-data.cjs');
+const {resolveLibraryContext} = require('../lib/library-context.cjs');
 const {discoverSkills, getRepoNameFromUrl, parseSource, prepareSource} = require('../lib/source.cjs');
 
 const html = htm.bind(React.createElement);
@@ -410,6 +411,7 @@ function ModeTabs({rootMode, compact = false}) {
       ${[
         {id: 'areas', label: 'Shelves (w)'},
         {id: 'sources', label: 'Sources (r)'},
+        {id: 'installed', label: 'Installed (e)'},
       ].map((tab) => {
         const selected = tab.id === rootMode;
         return html`
@@ -835,12 +837,12 @@ function HelpOverlay({viewport = null}) {
       subtitle="Keyboard and navigation for the library view."
       footerLines=${['? or Esc closes help']}
     >
-      <${Text} color=${COLORS.text}>Arrow keys move between shelves, sources, lanes, and picks.<//>
+      <${Text} color=${COLORS.text}>Arrow keys move between shelves, sources, installed picks, lanes, and skills.<//>
       <${Text} color=${COLORS.text}>Enter opens the focused shelf, source, lane, or pick.<//>
       <${Text} color=${COLORS.text}>/ opens library search, : opens the command palette, ? closes this help.<//>
       <${Text} color=${COLORS.text}>b or Esc goes back, c opens curator actions, i opens install choices, o opens upstream, q quits.<//>
       <${Text} color=${COLORS.text}>t cycles the house themes.<//>
-      <${Text} color=${COLORS.muted}>Shelves are the default library view. Sources stay available when provenance matters more than task-first browsing.<//>
+      <${Text} color=${COLORS.muted}>Shelves are the default view. Sources keep provenance visible. Installed shows what lives in the standard scopes right now.<//>
     <//>
   `;
 }
@@ -1075,6 +1077,8 @@ function SkillScreen({skill, previewMode, scope, agent, columns, viewport = null
   const editorialLines = [
     whyHere,
     skill.description !== whyHere ? skill.description : null,
+    skill.requiresTitles?.length ? `Depends on: ${skill.requiresTitles.join(', ')}` : null,
+    skill.requiredByTitles?.length ? `Used by: ${skill.requiredByTitles.join(', ')}` : null,
   ].filter(Boolean);
   const previewContent = previewLines.length > 0
     ? previewLines
@@ -1115,6 +1119,7 @@ function SkillScreen({skill, previewMode, scope, agent, columns, viewport = null
           eyebrow="Next action"
           lines=${[
             installSummary,
+            `Install state: ${skill.installStateLabel || 'not installed in the standard scopes'}`,
             `${getTierLabel(skill)} / ${getDistributionLabel(skill)}`,
             provenanceLines[0],
           ]}
@@ -1177,6 +1182,7 @@ function SkillScreen({skill, previewMode, scope, agent, columns, viewport = null
         eyebrow="Next action"
         lines=${[
           installSummary,
+          `Install state: ${skill.installStateLabel || 'not installed in the standard scopes'}`,
           `${getTierLabel(skill)} / ${getDistributionLabel(skill)}`,
           skillsSpec ? 'skills.sh is available if you want to install directly from the upstream repo.' : 'This skill currently installs through the curated library path only.',
         ]}
@@ -1233,6 +1239,7 @@ function SkillScreen({skill, previewMode, scope, agent, columns, viewport = null
                 eyebrow="Next action"
                 lines=${[
                   installSummary,
+                  `Install state: ${skill.installStateLabel || 'not installed in the standard scopes'}`,
                   `${getTierLabel(skill)} / ${getDistributionLabel(skill)}`,
                   skillsSpec ? 'skills.sh is also available if you want the upstream repository path.' : 'Use the curated install path when you want the library copy and the shelf context.',
                 ]}
@@ -1377,7 +1384,9 @@ function InstallChooser({skill, scope, agent, selectedIndex, columns, viewport =
 function buildBreadcrumbs(rootMode, stack, catalog) {
   const rootLabel = rootMode === 'areas'
     ? 'Shelves'
-    : 'Sources';
+    : rootMode === 'sources'
+      ? 'Sources'
+      : 'Installed';
   const trail = ['Atlas', rootLabel];
 
   for (const entry of stack.slice(1)) {
@@ -1488,6 +1497,7 @@ function getSkillProvenanceLines(skill, {wide = false} = {}) {
   return [
     `${skill.workAreaTitle} shelf · ${skill.branchTitle}`,
     `${getTierLabel(skill)} · ${getDistributionLabel(skill)} · ${skill.trust}`,
+    `Install state: ${skill.installStateLabel || 'not installed in the standard scopes'}`,
     `Source repo: ${skill.source}`,
     wide
       ? `Collections: ${(skill.collections || []).join(', ') || 'none'}`
@@ -1514,6 +1524,13 @@ function getSourceItems(catalog) {
     footerLeft: `${formatCount(source.areaCount, 'shelf', 'shelves')} · ${formatCount(source.branchCount, 'lane')}`,
     footerRight: 'Open',
   }));
+}
+
+function getSkillCardChips(skill, fallbackChips = []) {
+  const chips = [];
+  if (skill.installStateLabel) chips.push(skill.installStateLabel);
+  chips.push(...fallbackChips);
+  return chips.filter(Boolean);
 }
 
 function getAreaItems(area) {
@@ -1551,7 +1568,7 @@ function getSkillItems(skills) {
     title: skill.title,
     count: skill.verified ? 'verified' : skill.origin,
     description: skill.whyHere || skill.description,
-    chips: [skill.sourceTitle, skill.syncMode],
+    chips: getSkillCardChips(skill, [skill.sourceTitle, skill.syncMode]),
     footerLeft: `${skill.workAreaTitle} / ${skill.branchTitle}`,
     footerRight: 'Inspect',
   }));
@@ -1563,10 +1580,16 @@ function getCollectionSkillItems(collection) {
     title: skill.title,
     count: skill.verified ? 'verified' : skill.origin,
     description: skill.whyHere || skill.description,
-    chips: [skill.workAreaTitle, skill.sourceTitle],
+    chips: getSkillCardChips(skill, [skill.workAreaTitle, skill.sourceTitle]),
     footerLeft: `${skill.branchTitle} · ${skill.syncMode}`,
     footerRight: 'Inspect',
   }));
+}
+
+function getInstalledItems(catalog) {
+  return getSkillItems(
+    catalog.skills.filter((skill) => skill.installStateLabel)
+  );
 }
 
 function filterPaletteItems(items, query) {
@@ -1635,7 +1658,7 @@ function discoverSourceSkillsForCatalog(source) {
   }
 }
 
-function App({catalog: initialCatalog, scope, agent, onExit}) {
+function App({catalog: initialCatalog, scope, agent, onExit, libraryContext}) {
   const {exit} = useApp();
   const {stdout} = useStdout();
   const {columns, rows} = resolveTerminalSize(stdout);
@@ -1688,7 +1711,7 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
 
   const current = stack[stack.length - 1];
   const activeTheme = THEMES[themeIndex] || THEMES[0];
-  const refreshCatalog = () => setCatalog(buildCatalog());
+  const refreshCatalog = () => setCatalog(buildCatalog(libraryContext));
   const showStatus = (tone, text) => setStatusMessage({tone, text});
 
   const runMutation = (args, options = {}) => {
@@ -1747,7 +1770,7 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
   const currentSkill = current.type === 'skill'
     ? catalog.skills.find((skill) => skill.name === current.skillName)
     : null;
-  const reviewQueue = useMemo(() => buildReviewQueue(loadCatalogData()), [catalog]);
+  const reviewQueue = useMemo(() => buildReviewQueue(loadCatalogData(libraryContext)), [catalog, libraryContext]);
 
   const openFieldEditor = (field, title, initialValue = '', subtitle = '') => {
     setOverlay({
@@ -1907,6 +1930,12 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
       setSelectedIndex(0);
       setPreviewMode(false);
     }});
+    items.push({id: 'go-installed', label: 'Installed', detail: 'See which library picks are installed globally or in the project', run: () => {
+      setRootMode('installed');
+      setStack([{type: 'home'}]);
+      setSelectedIndex(0);
+      setPreviewMode(false);
+    }});
     items.push({id: 'search', label: 'Search', detail: 'Find a skill across the entire library', run: () => {
       setSearchMode(true);
       setQuery('');
@@ -1915,9 +1944,17 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
     items.push({id: 'review-library', label: 'Review Library', detail: 'Open the derived curator review queue', run: () => {
       setOverlay({type: 'review', selectedIndex: 0});
     }});
-    items.push({id: 'add-from-repo', label: 'Add From Repo', detail: 'Catalog a new upstream skill from a GitHub repo', run: () => {
-      setOverlay({type: 'repo-input', value: ''});
-    }});
+    if (catalog.mode === 'workspace') {
+      items.push({id: 'add-from-library', label: 'Add From Library', detail: 'Pull a bundled pick into this workspace library', run: () => {
+        setOverlay({type: 'library-skill', value: ''});
+      }});
+      items.push({id: 'add-from-repo', label: 'Add From Repo', detail: 'Catalog a new upstream skill from a GitHub repo', run: () => {
+        setOverlay({type: 'repo-input', value: ''});
+      }});
+      items.push({id: 'build-docs', label: 'Build Docs', detail: 'Regenerate README.md and WORK_AREAS.md for this workspace', run: () => {
+        runMutation(['build-docs'], {successText: 'Workspace docs rebuilt.'});
+      }});
+    }
     items.push({id: 'theme-cycle', label: 'Cycle house theme', detail: `Current theme: ${activeTheme.label}`, run: () => {
       setThemeIndex((value) => (value + 1) % THEMES.length);
     }});
@@ -1934,6 +1971,15 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
       items.push({id: 'curate', label: 'Curate Skill', detail: 'Edit placement, notes, trust, and labels for the focused pick', run: () => {
         openCurateMenu();
       }});
+      if (currentSkill.installStateLabel) {
+        items.push({id: 'sync-skill', label: 'Sync Skill', detail: `Refresh the installed copy (${currentSkill.installStateLabel})`, run: () => {
+          const args = ['sync', currentSkill.name];
+          if (currentSkill.installedGlobally && currentSkill.installedInProject) args.push('--all');
+          else if (currentSkill.installedInProject) args.push('--project');
+          else args.push('--global');
+          runMutation(args, {successText: `Refreshed ${currentSkill.title}.`});
+        }});
+      }
       items.push({id: 'install', label: 'Install Skill', detail: 'Open install choices for the focused skill', run: () => {
         setChooserOpen(true);
         setChooserIndex(0);
@@ -1951,7 +1997,7 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
     }});
 
     return items;
-  }, [activeTheme.label, current.type, currentSkill, previewMode, rootMode, stack.length]);
+  }, [activeTheme.label, catalog.mode, current.type, currentSkill, previewMode, rootMode, stack.length]);
 
   const filteredPaletteItems = useMemo(
     () => filterPaletteItems(paletteItems, paletteQuery),
@@ -2151,7 +2197,7 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
         return;
       }
 
-      if (overlay.type === 'input' || overlay.type === 'move-area' || overlay.type === 'move-branch' || overlay.type === 'repo-input' || overlay.type === 'repo-area' || overlay.type === 'repo-branch' || overlay.type === 'repo-why') {
+      if (overlay.type === 'input' || overlay.type === 'move-area' || overlay.type === 'move-branch' || overlay.type === 'repo-input' || overlay.type === 'repo-area' || overlay.type === 'repo-branch' || overlay.type === 'repo-why' || overlay.type === 'library-skill' || overlay.type === 'library-area' || overlay.type === 'library-branch' || overlay.type === 'library-why') {
         if (key.escape || input === 'b') {
           setOverlay(null);
           return;
@@ -2232,6 +2278,44 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
               afterSuccess: () => {
                 setOverlay(null);
                 setStack((currentStack) => [...currentStack, {type: 'skill', skillName: overlay.skill.name}]);
+                setSelectedIndex(0);
+                setPreviewMode(false);
+              },
+            });
+            if (success) setOverlay(null);
+          } else if (overlay.type === 'library-skill') {
+            setOverlay({
+              type: 'library-area',
+              skillName: value,
+              value: '',
+            });
+          } else if (overlay.type === 'library-area') {
+            setOverlay({
+              type: 'library-branch',
+              skillName: overlay.skillName,
+              workArea: value,
+              value: '',
+            });
+          } else if (overlay.type === 'library-branch') {
+            setOverlay({
+              type: 'library-why',
+              skillName: overlay.skillName,
+              workArea: overlay.workArea,
+              branch: value,
+              value: '',
+            });
+          } else if (overlay.type === 'library-why') {
+            const success = runMutation([
+              'add',
+              overlay.skillName,
+              '--area', overlay.workArea,
+              '--branch', overlay.branch,
+              '--why', value,
+            ], {
+              successText: `Added ${overlay.skillName} to the workspace.`,
+              afterSuccess: () => {
+                setOverlay(null);
+                setStack((currentStack) => [...currentStack, {type: 'skill', skillName: overlay.skillName}]);
                 setSelectedIndex(0);
                 setPreviewMode(false);
               },
@@ -2381,8 +2465,17 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
         setSelectedIndex(0);
         return;
       }
+      if (input === 'e') {
+        setRootMode('installed');
+        setSelectedIndex(0);
+        return;
+      }
 
-      const itemCount = rootMode === 'areas' ? catalog.areas.length : catalog.sources.length;
+      const itemCount = rootMode === 'areas'
+        ? catalog.areas.length
+        : rootMode === 'sources'
+          ? catalog.sources.length
+          : catalog.skills.filter((skill) => skill.installStateLabel).length;
       const columnsPerRow = getColumnsPerRow(columns);
 
       if (key.leftArrow || key.rightArrow || key.upArrow || key.downArrow) {
@@ -2395,6 +2488,8 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
           setStack((currentStack) => [...currentStack, {type: 'area', areaId: catalog.areas[selectedIndex].id}]);
         } else if (rootMode === 'sources' && catalog.sources[selectedIndex]) {
           setStack((currentStack) => [...currentStack, {type: 'source', sourceSlug: catalog.sources[selectedIndex].slug}]);
+        } else if (rootMode === 'installed' && getInstalledItems(catalog)[selectedIndex]) {
+          setStack((currentStack) => [...currentStack, {type: 'skill', skillName: getInstalledItems(catalog)[selectedIndex].id}]);
         }
         setSelectedIndex(0);
       }
@@ -2502,37 +2597,64 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
       <//>
     `;
   } else if (current.type === 'home') {
-    const homeItems = rootMode === 'areas' ? getShelfItems(catalog) : getSourceItems(catalog);
+    const homeItems = rootMode === 'areas'
+      ? getShelfItems(catalog)
+      : rootMode === 'sources'
+        ? getSourceItems(catalog)
+        : getInstalledItems(catalog);
     const selectedHomeItem = homeItems[selectedIndex] || homeItems[0];
     const showHomeInspector = !viewport.compact && Boolean(selectedHomeItem);
+    const emptyWorkspace = catalog.mode === 'workspace' && catalog.total === 0;
     body = html`
       <${Box} flexDirection="column">
         <${Header}
           breadcrumbs=${breadcrumbs}
-          title=${rootMode === 'areas' ? LIBRARY_THESIS : 'Trusted publishers'}
+          title=${rootMode === 'areas'
+            ? LIBRARY_THESIS
+            : rootMode === 'sources'
+              ? 'Trusted publishers'
+              : 'Installed'}
           subtitle=${rootMode === 'areas'
             ? 'Start with the work. Each shelf stays small enough to browse quickly.'
-            : 'See where the picks come from and which lanes each publisher feeds into the library.'}
+            : rootMode === 'sources'
+              ? 'See where the picks come from and which lanes each publisher feeds into the library.'
+              : 'Standard scope installs only: global and project.'}
           metaItems=${[`${catalog.total} skills`, `${catalog.areas.length} shelves`, `${catalog.sources.length} sources`, activeTheme.label]}
           hint="Arrow keys move · Enter drills in · / searches · : command palette"
           viewport=${viewport}
         />
         <${ModeTabs} rootMode=${rootMode} compact=${viewport.compact} />
-        <${Box} marginTop=${1}>
-          <${AtlasGrid}
-            items=${homeItems}
-            selectedIndex=${selectedIndex}
-            columns=${columns}
-            rows=${rows}
-            reservedRows=${getReservedRows('home-grid', viewport, {showInspector: showHomeInspector})}
-            compact=${viewport.compact}
-          />
-        <//>
-        ${showHomeInspector
+        ${emptyWorkspace
+          ? html`
+              <${Inspector}
+                title="This workspace is empty"
+                eyebrow="Start your own library"
+                lines=${[
+                  'Start by adding your first skill from the bundled reference library.',
+                  'Then use repo adds and house copies when you want more control.',
+                  'Commands: add, catalog, vendor, build-docs.',
+                ]}
+                command="npx ai-agent-skills add frontend-design --area frontend --branch Implementation --why 'I want this on my shelf.'"
+                footer="Use : for the command palette. Add From Library and Build Docs are available there."
+              />
+            `
+          : html`
+              <${Box} marginTop=${1}>
+                <${AtlasGrid}
+                  items=${homeItems}
+                  selectedIndex=${selectedIndex}
+                  columns=${columns}
+                  rows=${rows}
+                  reservedRows=${getReservedRows('home-grid', viewport, {showInspector: showHomeInspector})}
+                  compact=${viewport.compact}
+                />
+              <//>
+            `}
+        ${!emptyWorkspace && showHomeInspector
           ? html`
               <${Inspector}
                 title=${selectedHomeItem.title}
-                eyebrow=${rootMode === 'areas' ? 'Shelf' : 'Source'}
+                eyebrow=${rootMode === 'areas' ? 'Shelf' : rootMode === 'sources' ? 'Source' : 'Installed'}
                 lines=${[
                   selectedHomeItem.description,
                   ...(selectedHomeItem.sampleLines || []),
@@ -2653,7 +2775,7 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
         <${Header}
           breadcrumbs=${breadcrumbs}
           title=${currentSource.title}
-          subtitle=${sourceNoteFor(currentSource.slug, 'A source view of the library: what this repo actually contributes.')}
+          subtitle=${sourceNoteFor(currentSource.slug, 'A source view of the library: what this source contributes.')}
           metaItems=${[`${currentSource.skillCount} skills`, `${currentSource.branchCount} branches`, `${currentSource.mirrorCount} mirrors`, `${currentSource.snapshotCount} snapshots`, activeTheme.label]}
           hint="Arrow keys move across lanes · Enter opens a branch · b goes back"
           viewport=${viewport}
@@ -2765,6 +2887,7 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
           metaItems=${[
             `${currentSkill.workAreaTitle} shelf`,
             currentSkill.branchTitle,
+            currentSkill.installStateLabel || 'not installed',
             getTierLabel(currentSkill),
             getDistributionLabel(currentSkill),
             ...(currentSkill.collections || []).slice(0, 2),
@@ -2785,10 +2908,10 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
   const footerHint = viewport.micro
     ? current.type === 'skill'
       ? 'c curate · i install · p preview · o upstream · b back · q quit'
-      : 'Enter open · b back · : commands · q quit'
+      : 'Enter open · b back · : commands · w/r/e views · q quit'
     : current.type === 'skill'
       ? '/ search · : palette · b back · c curate · i install · p preview · o upstream · t theme · ? help · q quit'
-      : '/ search · : palette · Enter open · b back · w/r switch views · t theme · ? help · q quit';
+      : '/ search · : palette · Enter open · b back · w/r/e switch views · t theme · ? help · q quit';
   const footerMode = current.type === 'skill'
     ? 'DETAIL'
     : current.type === 'home'
@@ -2920,6 +3043,46 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
             footerLines=${['Enter saves to the catalog · Esc closes']}
           />`
         : null}
+      ${overlay?.type === 'library-skill'
+        ? html`<${TextEntryOverlay}
+            title="Add From Library"
+            subtitle="Enter a bundled skill name like frontend-design or pdf."
+            value=${overlay.value}
+            setValue=${(value) => setOverlay((currentOverlay) => ({...currentOverlay, value}))}
+            viewport=${viewport}
+            footerLines=${['Enter continues to shelf placement · Esc closes']}
+          />`
+        : null}
+      ${overlay?.type === 'library-area'
+        ? html`<${TextEntryOverlay}
+            title="Choose shelf"
+            subtitle=${`Bundled pick: ${overlay.skillName}`}
+            value=${overlay.value}
+            setValue=${(value) => setOverlay((currentOverlay) => ({...currentOverlay, value}))}
+            viewport=${viewport}
+            footerLines=${['Enter continues · Esc closes']}
+          />`
+        : null}
+      ${overlay?.type === 'library-branch'
+        ? html`<${TextEntryOverlay}
+            title="Choose branch"
+            subtitle=${`Shelf: ${overlay.workArea}`}
+            value=${overlay.value}
+            setValue=${(value) => setOverlay((currentOverlay) => ({...currentOverlay, value}))}
+            viewport=${viewport}
+            footerLines=${['Enter continues · Esc closes']}
+          />`
+        : null}
+      ${overlay?.type === 'library-why'
+        ? html`<${TextEntryOverlay}
+            title="Why it belongs"
+            subtitle="Only fully placed picks get added to the workspace."
+            value=${overlay.value}
+            setValue=${(value) => setOverlay((currentOverlay) => ({...currentOverlay, value}))}
+            viewport=${viewport}
+            footerLines=${['Enter adds it to the workspace · Esc closes']}
+          />`
+        : null}
       ${body}
       ${statusMessage
         ? html`
@@ -2936,7 +3099,8 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
 }
 
 export async function launchTui({agent = null, scope = 'global'} = {}) {
-  const catalog = buildCatalog();
+  const libraryContext = resolveLibraryContext();
+  const catalog = buildCatalog(libraryContext);
   const restoreScreen = enterInteractiveScreen(process.stdout);
 
   return await new Promise((resolve) => {
@@ -2944,7 +3108,7 @@ export async function launchTui({agent = null, scope = 'global'} = {}) {
     const instance = render(
       html`<${App} catalog=${catalog} scope=${scope} agent=${agent} onExit=${(action) => {
         exitAction = action;
-      }} />`,
+      }} libraryContext=${libraryContext} />`,
       {
         stdout: process.stdout,
         stdin: process.stdin,

@@ -1,7 +1,7 @@
 {
   "name": "ai-agent-skills",
-  "version": "3.5.1",
-  "description": "Curated agent skills library and CLI installer.",
+  "version": "4.0.0",
+  "description": "Curated agent skills library and library manager for building your own.",
   "main": "cli.js",
   "bin": {
     "ai-agent-skills": "cli.js"
@@ -26,6 +26,7 @@
   },
   "files": [
     "cli.js",
+    "docs/workflows/",
     "lib/",
     "skills/",
     "skills.json",

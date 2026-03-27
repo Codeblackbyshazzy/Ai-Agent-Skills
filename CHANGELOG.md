@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [4.0.0] - 2026-03-27
+
+### Added
+- Managed workspace mode with `.ai-agent-skills/config.json` and `init-library` scaffolding.
+- The `add` command for bringing bundled picks, upstream repo skills, and house copies into a workspace library.
+- The `build-docs` command for regenerating workspace `README.md` and `WORK_AREAS.md`.
+- Dependency-aware catalog installs with `requires` and `--no-deps`.
+- A shared install-state index used by the CLI and TUI.
+- An `Installed` top-level TUI view and an empty-workspace onboarding state.
+- Authored workflow guides for starting a library, adding upstream skills, making house copies, organizing shelves, and refreshing installs.
+
+### Changed
+- Promoted `sync` to the primary refresh command and kept `update` as a compatibility alias.
+- Routed CLI and TUI library reads through active library resolution, so commands now follow bundled mode or workspace mode based on the current directory.
+- Reframed the README and package surface around `ai-agent-skills` as a library manager, not only the bundled curated library.
+- Split the README quick start into bundled-library and managed-workspace flows.
+
+### Fixed
+- Restored installed workspace catalog skills after workspace moves when commands run inside the relocated workspace.
+- Tightened the npm publish surface so only workflow docs ship from `docs/`.
+- Enforced duplicate-dependency validation for `requires`.
+- Preserved explicit GitHub refs when cataloged upstream skills are stored as install metadata.
+
 ## [3.4.3] - 2026-03-21
 
 ### Changed

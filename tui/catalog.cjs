@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const { loadCatalogData } = require('../lib/catalog-data.cjs');
-
-const ROOT_DIR = path.join(__dirname, '..');
-const SKILLS_DIR = path.join(ROOT_DIR, 'skills');
+const { buildDependencyGraph } = require('../lib/dependency-graph.cjs');
+const { buildInstallStateIndex, getInstallState } = require('../lib/install-state.cjs');
+const { resolveLibraryContext } = require('../lib/library-context.cjs');
 const SKILLS_CLI_VERSION = 'skills@1.4.5';
 
 const SOURCE_TITLES = {
@@ -64,13 +64,13 @@ function sourceTitle(source) {
   return SOURCE_TITLES[source] || humanizeSlug(String(source || '').split('/').pop() || source);
 }
 
-function readSkillsJson() {
-  return loadCatalogData();
+function readSkillsJson(context) {
+  return loadCatalogData(context);
 }
 
-function readSkillMarkdown(skillName) {
+function readSkillMarkdown(skillName, context) {
   try {
-    const skillPath = path.join(SKILLS_DIR, skillName, 'SKILL.md');
+    const skillPath = path.join(context.skillsDir, skillName, 'SKILL.md');
     return fs.readFileSync(skillPath, 'utf8');
   } catch {
     return null;
@@ -297,6 +297,10 @@ function getGitHubInstallSource(skill) {
 }
 
 function getGitHubInstallSpec(skill, agent) {
+  if (!skill || skill.tier !== 'upstream') {
+    return null;
+  }
+
   const source = getGitHubInstallSource(skill);
   if (!source) return null;
 
@@ -306,8 +310,10 @@ function getGitHubInstallSpec(skill, agent) {
   };
 }
 
-function buildCatalog() {
-  const data = readSkillsJson();
+function buildCatalog(context = resolveLibraryContext()) {
+  const data = readSkillsJson(context);
+  const installStateIndex = buildInstallStateIndex();
+  const dependencyGraph = buildDependencyGraph(data);
   const collectionPlacement = buildCollectionPlacementMap(Array.isArray(data.collections) ? data.collections : []);
   const collectionLookup = new Map(
     (Array.isArray(data.collections) ? data.collections : []).map((collection) => [
@@ -338,9 +344,12 @@ function buildCatalog() {
     };
     const branchTitle = humanizeSlug(skill.branch || 'misc');
     const isVendored = skill.tier !== 'upstream';
-    const markdown = isVendored ? readSkillMarkdown(skill.name) : null;
+    const markdown = isVendored ? readSkillMarkdown(skill.name, context) : null;
     const source = skill.source;
     const title = humanizeSlug(skill.name);
+    const installState = getInstallState(installStateIndex, skill.name);
+    const requiresNames = dependencyGraph.requiresMap.get(skill.name) || [];
+    const requiredByNames = dependencyGraph.requiredByMap.get(skill.name) || [];
 
     return {
       ...skill,
@@ -354,6 +363,11 @@ function buildCatalog() {
       repoUrl: `https://github.com/${source}`,
       sourceTitle: sourceTitle(source),
       collections: collectionTitlesBySkill.get(skill.name) || [],
+      installStateLabel: installState.label,
+      installedGlobally: installState.global,
+      installedInProject: installState.project,
+      requiresNames,
+      requiredByNames,
       isShelved: collectionPlacement.has(skill.name),
       curationScore: getSkillCurationScore(collectionPlacement, skill),
       markdown,
@@ -375,6 +389,10 @@ function buildCatalog() {
   });
 
   const skillLookup = new Map(skills.map((skill) => [skill.name, skill]));
+  for (const skill of skills) {
+    skill.requiresTitles = skill.requiresNames.map((name) => skillLookup.get(name)?.title || humanizeSlug(name));
+    skill.requiredByTitles = skill.requiredByNames.map((name) => skillLookup.get(name)?.title || humanizeSlug(name));
+  }
 
   const collections = [...collectionLookup.values()]
     .map((collection) => {
@@ -393,6 +411,7 @@ function buildCatalog() {
         description: collection.description || '',
         skills: collectionSkills,
         skillCount: collectionSkills.length,
+        installedCount: collectionSkills.filter((skill) => skill.installStateLabel).length,
         verifiedCount,
         authoredCount,
         workAreaTitles,
@@ -447,6 +466,7 @@ function buildCatalog() {
       title: meta.title,
       description: meta.description,
       skillCount: areaSkills.length,
+      installedCount: areaSkills.filter((skill) => skill.installStateLabel).length,
       repoCount: new Set(areaSkills.map((skill) => skill.source)).size,
       branches,
       searchText: buildSearchText([
@@ -482,6 +502,7 @@ function buildCatalog() {
       slug: source,
       title: sourceTitle(source),
       skillCount: sourceSkills.length,
+      installedCount: sourceSkills.filter((skill) => skill.installStateLabel).length,
       branchCount: branchTitles.size,
       areaCount: areaTitles.size,
       mirrorCount: sourceSkills.filter((skill) => skill.syncMode === 'mirror').length,
@@ -504,6 +525,9 @@ function buildCatalog() {
   }).sort((left, right) => right.skillCount - left.skillCount || left.title.localeCompare(right.title));
 
   return {
+    mode: context.mode,
+    rootDir: context.rootDir,
+    installStateIndex,
     updated: data.updated,
     total: data.total,
     houseCount: skills.filter((skill) => skill.tier === 'house').length,
