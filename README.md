@@ -23,9 +23,9 @@
 
 ## Library
 
-`ai-agent-skills` now does two jobs.
+`ai-agent-skills` does two jobs.
 
-It ships my curated bundled library, and it gives you the CLI and TUI to build a managed library of your own.
+It ships my curated bundled library, and it gives you the CLI and TUI to build and manage a library of your own.
 It works with Claude Code, Codex, Cursor, and other SKILL.md-compatible agents.
 
 The bundled library is organized the way I work:
@@ -35,24 +35,24 @@ The bundled library is organized the way I work:
 - Keep provenance visible
 - Keep notes that explain why a skill is here
 
-Use `skills.sh` when you want the broad ecosystem.
-Use `ai-agent-skills` when you want a kept set, shelves, provenance, and a library you can manage yourself.
+Use `skills.sh` for the broad ecosystem.
+Use `ai-agent-skills` for a smaller kept library with shelves, provenance, and notes.
 
 ## What's New in 4.0.0
 
 - Managed library workspaces with `init-library`
 - `add <source>` for bringing bundled picks, upstream repo skills, or house copies into your own library
-- `sync [name]` as the main refresh command, with `update` kept as an alias
+- `sync [name]` as the main refresh command; `update` stays as an alias
 - Dependency-aware installs with `requires` and `--no-deps`
-- Installed-state visibility across the CLI and the TUI
+- Installed status in both the CLI and TUI
 
 ## Why Keep It
 
 I launched this on December 17, 2025, before `skills.sh` existed and before the ecosystem had a clear default universal installer.
 
-Originally this repo was that installer. That part still matters.
+Originally this repo was that installer. It still does that.
 
-I keep it because the library itself has become useful: shelves, provenance, and notes that make the curation legible.
+I keep it because the library itself is useful: shelves, provenance, and notes that make the curation easy to read.
 
 ## How It Works
 
@@ -64,13 +64,13 @@ Each skill here is either a house copy or a cataloged upstream pick.
 
 - `Cataloged upstream`
   Metadata in `skills.json` with no local folder.
-  These stay upstream and install live from the source repo when you ask for them.
+  These stay upstream and install from the source repo when you ask for them.
 
 Upstream work stays upstream. That keeps the library lean.
 
 ## Quick Start
 
-### Use The Bundled Library
+### Use the bundled library
 
 ```bash
 # Open the terminal browser
@@ -105,7 +105,7 @@ Default install targets:
 
 Legacy agent-specific targets still work through `--agent <name>`.
 
-### Start Your Own Library
+### Start your own library
 
 ```bash
 # Create a managed workspace
@@ -121,9 +121,9 @@ npx ai-agent-skills build-docs
 
 ## Workspace Mode
 
-Workspace mode is now part of the main product surface.
+Workspace mode is built in now.
 
-Start with a managed workspace, pull in a few skills, then keep your own shelves current with `add`, `catalog`, `vendor`, `sync`, and `build-docs`.
+Start with a managed workspace, add a few skills, then keep your own shelves current with `add`, `catalog`, `vendor`, `sync`, and `build-docs`.
 
 ```bash
 npx ai-agent-skills init-library my-library
@@ -152,7 +152,7 @@ Most browsing starts in one of two places:
 | Shelves | The main way to understand the library: start with the kind of work, then drill into the small set of picks on that shelf. | `npx ai-agent-skills list` |
 | Sources | The provenance view: see which publishers feed which shelves and branches. | `npx ai-agent-skills info frontend-design` |
 
-The other views are still there. They are just secondary:
+The other views are still useful, just more situational:
 
 - `npx ai-agent-skills browse` for the TUI
 - `npx ai-agent-skills list --collection my-picks` for a cross-shelf starter stack
@@ -190,12 +190,12 @@ Collections are smaller sets. Useful, but secondary to the shelves.
 | `docs-and-research` | Docs, files, research, and writing work. | `pdf`, `doc-coauthoring`, `docx` |
 <!-- GENERATED:collection-table:end -->
 
-## Curating The Catalog
+## Curating the catalog
 
 Use `catalog` when you want to add an upstream skill without vendoring it.
 
-In a managed workspace, `add` is the simpler front door.
-`catalog` and `vendor` are still the explicit power-user verbs.
+In a managed workspace, `add` is the easier place to start.
+`catalog` and `vendor` are still there when you want direct control.
 
 ```bash
 npx ai-agent-skills catalog openai/skills --list
@@ -213,7 +213,7 @@ It adds metadata and placement in the active library:
 - why it earned a place
 - how it should install later
 
-For existing picks, `curate` is the quick loop:
+For existing picks, `curate` is the quickest edit loop:
 
 ```bash
 npx ai-agent-skills curate frontend-design --branch Implementation
@@ -317,7 +317,7 @@ npx ai-agent-skills vendor <repo-or-path> --skill <name> --area <shelf> --branch
 - `npm run test:live`
   No-mock live verification. Clones the real upstream repos, captures raw `SKILL.md` frontmatter and file manifests, runs real install/sync/uninstall flows in isolated temp homes and projects, drives the TUI through a real PTY, and writes a report to `tmp/live-test-report.json`.
 - `npm run test:live:quick`
-  Smaller live matrix for faster iteration while keeping the same no-mock pipeline.
+  A smaller live matrix for faster iteration with the same no-mock pipeline.
 
 ## Legacy Agent Support
 
@@ -340,9 +340,9 @@ Still supported through `--agent <name>`:
 
 - Small shelves
 - Clear provenance
-- Notes that explain the keep
+- Notes that explain why something stays
 - Upstream repos staying upstream
-- A library that looks maintained
+- A library that looks cared for
 
 ## Contributing
 
