@@ -1410,7 +1410,10 @@ test('validate script catches generated doc drift', () => {
     writeFixtureDocs(tmpDir, fixtureData);
     fs.writeFileSync(path.join(tmpDir, 'package.json'), JSON.stringify({ version: '1.0.0' }));
     const readmePath = path.join(tmpDir, 'README.md');
-    const driftedReadme = fs.readFileSync(readmePath, 'utf8').replace('- 1 skills total', '- 999 skills total');
+    const driftedReadme = fs.readFileSync(readmePath, 'utf8').replace(
+      '<p align="center"><sub>1 house copies · 0 cataloged upstream</sub></p>',
+      '<p align="center"><sub>999 house copies · 0 cataloged upstream</sub></p>'
+    );
     fs.writeFileSync(readmePath, driftedReadme);
 
     let output = '';
