@@ -1,25 +1,31 @@
 # For Your Agent
 
-Use this when you want your agent to set up a library for you. just copy paste to ur gippty or clawd
+Use this when you want your agent to set up a library for you. You can paste it as-is.
 
 ## Paste this into your agent
 
 ```text
 Set up a small managed skills library for me with `ai-agent-skills`.
 
-Use the CLI, not manual file edits.
+Use this repo for reference if you need docs or examples:
+https://github.com/MoizIbnYousaf/Ai-Agent-Skills
+https://github.com/MoizIbnYousaf/Ai-Agent-Skills/blob/main/FOR_YOUR_AGENT.md
 
-1. Create a managed workspace with `npx ai-agent-skills init-library`.
-2. Ask me at most 3 short questions before acting:
+Use the CLI with `npx`. Do not ask me to open the repo or link you to anything else.
+Do not hand-edit files if the command already exists.
+
+1. Create a new folder called `my-skills-library` with `npx ai-agent-skills init-library my-skills-library`, unless I clearly ask for a different name.
+2. Move into that workspace and keep working there.
+3. Ask me at most 3 short questions before acting:
    - if you have a built-in question tool, use it
    - which shelves or kinds of work matter most
    - whether to start mostly from bundled picks or mix in upstream skills
    - whether installs should default to project scope, global scope, or library setup only
-3. Keep the first pass small, around 3 to 8 skills.
-4. Use `npx ai-agent-skills add` first.
-5. Use `catalog` when you need an upstream entry. Use `vendor` only for real house copies.
-6. Run `npx ai-agent-skills build-docs` at the end.
-7. Tell me what you added, which shelves you used, and what you think I should add next.
+4. Keep the first pass small, around 3 to 8 skills.
+5. Use `npx ai-agent-skills add` first.
+6. Use `catalog` when you need an upstream entry. Use `vendor` only for real house copies.
+7. Run `npx ai-agent-skills build-docs` at the end.
+8. Tell me what you added, which shelves you used, and what you think I should add next.
 
 If you cannot run local commands here, tell me to switch to an agent with terminal access.
 ```

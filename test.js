@@ -615,7 +615,10 @@ test('workflow docs exist and README links them', () => {
   assert(fs.existsSync(agentDocPath), 'Expected FOR_YOUR_AGENT.md to exist');
   assertContains(readme, './FOR_YOUR_AGENT.md');
   assertContains(readme, '## Use It With Your Agent');
+  assertContains(readme, 'https://github.com/MoizIbnYousaf/Ai-Agent-Skills');
+  assertContains(readme, 'Do not ask me to open the repo or link you to anything else.');
   assertContains(readme, '## Workspace Mode');
+  assertContains(fs.readFileSync(agentDocPath, 'utf8'), 'https://github.com/MoizIbnYousaf/Ai-Agent-Skills/blob/main/FOR_YOUR_AGENT.md');
 });
 
 test('workspace add imports a bundled library pick into the active workspace', () => {
@@ -1798,6 +1801,8 @@ test('start-a-library workflow doc supports the agent-first flow', () => {
   assertContains(workflow, 'Paste this into your agent');
   assertContains(workflow, 'Use `init-library`, `add`, `install`, `sync`, and `build-docs`.');
   assertContains(workflow, '../../FOR_YOUR_AGENT.md');
+  assertContains(workflow, 'https://github.com/MoizIbnYousaf/Ai-Agent-Skills');
+  assertContains(workflow, 'Do not ask me to open the repo or link you to anything else.');
 });
 
 test('help examples use -p and -g flags', () => {

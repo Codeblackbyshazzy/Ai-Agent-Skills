@@ -21,6 +21,12 @@
 
 <p align="center"><em>Picked, shelved, and maintained by hand.</em></p>
 
+<p align="center">
+  <a href="./docs/workflows/start-a-library.md"><strong>Build your own library</strong></a>
+  ·
+  <a href="./FOR_YOUR_AGENT.md"><strong>For your agent</strong></a>
+</p>
+
 ## Library
 
 `ai-agent-skills` does two things.
@@ -73,6 +79,7 @@ Upstream work stays upstream. That keeps the library lean.
 Any Agent Skills-compatible agent with shell access can run this CLI for you.
 
 The CLI already supports that. Prompts help, but they are optional. When the agent passes explicit metadata like `--area`, `--branch`, and `--why`, it can set up and curate a library without editing files by hand.
+The block below includes the repo links so the agent can fetch its own context.
 
 Full handoff: [FOR_YOUR_AGENT.md](./FOR_YOUR_AGENT.md)
 
@@ -81,18 +88,24 @@ Full handoff: [FOR_YOUR_AGENT.md](./FOR_YOUR_AGENT.md)
 ```text
 Build me a small skills library with `ai-agent-skills`.
 
-Use the CLI, not manual file edits.
+Use this repo for reference if you need docs or examples:
+https://github.com/MoizIbnYousaf/Ai-Agent-Skills
+https://github.com/MoizIbnYousaf/Ai-Agent-Skills/blob/main/FOR_YOUR_AGENT.md
 
-1. Create a managed workspace with `npx ai-agent-skills init-library`.
-2. Ask me only the minimum questions you need before acting:
+Use the CLI with `npx`. Do not ask me to open the repo or link you to anything else.
+Do not hand-edit files if the command already exists.
+
+1. Create a new folder called `my-skills-library` with `npx ai-agent-skills init-library my-skills-library`, unless I clearly ask for a different name.
+2. Move into that workspace and keep working there.
+3. Ask me only the minimum questions you need before acting:
    - if you have a built-in question tool, use it
    - which shelves or kinds of work matter most
    - whether to start mostly from bundled picks or mix in upstream skills
    - whether installs should default to project scope, global scope, or library setup only
-3. Add a small starter set, around 3 to 8 skills.
-4. Start with `add`. Use `catalog` when you need an upstream entry. Use `vendor` only for a real house copy.
-5. Run `npx ai-agent-skills build-docs` at the end.
-6. Tell me what you added, which shelves you used, and what you'd add next.
+4. Add a small starter set, around 3 to 8 skills.
+5. Start with `add`. Use `catalog` when you need an upstream entry. Use `vendor` only for a real house copy.
+6. Run `npx ai-agent-skills build-docs` at the end.
+7. Tell me what you added, which shelves you used, and what you'd add next.
 
 If you cannot run local commands here, tell me to use another Agent Skills-compatible agent with terminal access.
 ```
