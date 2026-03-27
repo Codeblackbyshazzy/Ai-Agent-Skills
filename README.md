@@ -5,10 +5,10 @@ My curated agent skills library.
 There are a lot of skills now. These are the ones I actually keep around.
 
 <!-- GENERATED:library-stats:start -->
-- 60 skills total
-- 11 shelves
-- 11 house copies
-- 49 cataloged upstream
+- 55 skills total
+- 5 shelves
+- 8 house copies
+- 47 cataloged upstream
 <!-- GENERATED:library-stats:end -->
 
 The point is not to be a registry. The point is to be a bookshelf.
@@ -107,17 +107,11 @@ These are the shelves. They are the product.
 <!-- GENERATED:shelf-table:start -->
 | Shelf | Skills | What it covers |
 | --- | --- | --- |
-| Frontend | 5 | Interface systems, web product craft, and frontend execution. |
-| Mobile | 24 | Swift, SwiftUI, iOS, App Store, and Apple-platform development, with room for future React Native curation. |
-| Backend | 3 | Infra, tooling, application architecture, and codebase depth. |
-| Docs | 6 | Documents, specs, file handling, and long-form output. |
-| Testing | 2 | Review, QA, regression work, and keeping product quality sharp. |
-| Workflow | 3 | Execution patterns, prompting, ticketing, and operating rhythm. |
-| Research | 2 | Competitive scans, discovery work, and synthesis that helps decisions. |
-| Design | 4 | Visual systems, thematic work, creative direction, and media craft. |
-| Business | 3 | Brand, hiring, ops, and communication work around the product. |
-| AI | 6 | LLM applications, MCP servers, agent building, prompt engineering, and skills development. |
-| DevOps | 2 | CI/CD, observability, deployment, and release infrastructure. |
+| Frontend | 10 | Interfaces, design systems, browser work, and product polish. |
+| Backend | 5 | Systems, data, security, and runtime operations. |
+| Mobile | 24 | Swift, SwiftUI, iOS, and Apple-platform development, with room for future React Native branches. |
+| Workflow | 10 | Files, docs, planning, release work, and research-to-output flows. |
+| Agent Engineering | 6 | MCP, skill-building, prompting discipline, and LLM application work. |
 <!-- GENERATED:shelf-table:end -->
 
 The full map lives in [WORK_AREAS.md](./WORK_AREAS.md).
@@ -160,7 +154,7 @@ It adds metadata and editorial placement:
 For existing picks, `curate` is the fast loop:
 
 ```bash
-npx ai-agent-skills curate frontend-design --branch "Frontend (Anthropic)"
+npx ai-agent-skills curate frontend-design --branch Implementation
 npx ai-agent-skills curate ios-simulator-skill --collection swift-agent-skills
 npx ai-agent-skills curate ios-simulator-skill --remove-from-collection swift-agent-skills
 npx ai-agent-skills curate frontend-design --why "A stronger note that matches how I actually use it."
@@ -181,13 +175,13 @@ Current source mix:
 <!-- GENERATED:source-table:start -->
 | Source repo | Skills |
 | --- | --- |
-| `anthropics/skills` | 13 |
+| `anthropics/skills` | 11 |
 | `openai/skills` | 9 |
-| `ComposioHQ/awesome-claude-skills` | 4 |
 | `Dimillian/Skills` | 4 |
 | `wshobson/agents` | 4 |
-| `MoizIbnYousaf/Ai-Agent-Skills` | 3 |
 | `rgmez/apple-accessibility-skills` | 3 |
+| `ComposioHQ/awesome-claude-skills` | 2 |
+| `MoizIbnYousaf/Ai-Agent-Skills` | 2 |
 | `andrewgleave/skills` | 1 |
 | `arjitj2/swiftui-design-principles` | 1 |
 | `AvdLee/Core-Data-Agent-Skill` | 1 |

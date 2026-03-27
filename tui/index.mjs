@@ -98,8 +98,8 @@ const SOURCE_NOTES = {
   'ComposioHQ/awesome-claude-skills': 'Broad practical coverage for workflow, files, research, and adjacent execution tasks.',
   'MoizIbnYousaf/Ai-Agent-Skills': 'The directly-authored library skills that define the strongest house style here.',
   'anthropics/claude-code': 'High-signal Claude Code workflows worth keeping when they clearly raise the bar.',
-  'anthropics/skills': 'The strongest general-purpose upstream set in the ecosystem, especially for frontend, docs, and workflow.',
-  'openai/skills': 'Strong planning, browser, Figma, and implementation-oriented skills that complement the rest of the shelf.',
+  'anthropics/skills': 'The strongest general-purpose upstream set in the ecosystem, especially for frontend, workflow, and agent-engineering coverage.',
+  'openai/skills': 'Strong planning, browser, Figma, and implementation-oriented skills that complement the core shelves.',
   'wshobson/agents': 'The systems-heavy source for backend, architecture, and deeper engineering coverage.',
 };
 
@@ -2848,7 +2848,7 @@ function App({catalog: initialCatalog, scope, agent, onExit}) {
       ${overlay?.type === 'move-area'
         ? html`<${TextEntryOverlay}
             title="Move shelf"
-            subtitle="Enter the shelf id, like frontend, backend, docs, or workflow."
+            subtitle="Enter the shelf id, like frontend, backend, mobile, workflow, or agent-engineering."
             value=${overlay.value}
             setValue=${(value) => setOverlay((currentOverlay) => ({...currentOverlay, value}))}
             viewport=${viewport}

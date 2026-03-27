@@ -748,7 +748,7 @@ async function main() {
       'webapp-testing',
       'gh-fix-ci',
       'sentry',
-      'best-practices',
+      'userinterface-wiki',
     ]);
     report.collectionInstalls.push(collectionInstall);
     pass('Collection install flow verified test-and-debug');

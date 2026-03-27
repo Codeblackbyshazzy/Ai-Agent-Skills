@@ -6,19 +6,30 @@ The repo folders stay flat under `skills/<name>/` for house copies. The catalog 
 
 ## Frontend
 
-5 skills. Interface systems, web product craft, and frontend execution.
+10 skills. Interfaces, design systems, browser work, and product polish.
 
 | Branch | Skills | Source |
 | --- | --- | --- |
 | Components | `shadcn` | shadcn-ui |
-| Design Engineering | `emil-design-eng` | emilkowalski |
-| Frontend (Anthropic) | `frontend-design` | anthropics |
-| Frontend (Community) | `userinterface-wiki` | raphaelsalaja |
-| Frontend (OpenAI) | `frontend-skill` | openai |
+| Design Engineering | `figma`, `emil-design-eng` | openai, emilkowalski |
+| Implementation | `frontend-design`, `frontend-skill` | anthropics, openai |
+| Quality | `webapp-testing`, `playwright`, `userinterface-wiki` | anthropics, openai, raphaelsalaja |
+| Visual Systems | `canvas-design`, `brand-guidelines` | anthropics |
+
+## Backend
+
+5 skills. Systems, data, security, and runtime operations.
+
+| Branch | Skills | Source |
+| --- | --- | --- |
+| Architecture | `backend-development` | wshobson |
+| Data | `database-design` | wshobson |
+| Operations | `gh-fix-ci`, `sentry` | openai |
+| Security | `security-best-practices` | openai |
 
 ## Mobile
 
-24 skills. Swift, SwiftUI, iOS, App Store, and Apple-platform development, with room for future React Native curation.
+24 skills. Swift, SwiftUI, iOS, and Apple-platform development, with room for future React Native branches.
 
 | Branch | Skills | Source |
 | --- | --- | --- |
@@ -35,95 +46,26 @@ The repo folders stay flat under `skills/<name>/` for house copies. The catalog 
 | Swift / Tools | `ios-simulator-skill` | conorluddy |
 | Swift / User Interface | `writing-for-interfaces` | andrewgleave |
 
-## Backend
-
-3 skills. Infra, tooling, application architecture, and codebase depth.
-
-| Branch | Skills | Source |
-| --- | --- | --- |
-| Architecture | `backend-development` | wshobson |
-| Database | `database-design` | wshobson |
-| Security | `security-best-practices` | openai |
-
-## Docs
-
-6 skills. Documents, specs, file handling, and long-form output.
-
-| Branch | Skills | Source |
-| --- | --- | --- |
-| Documents | `docx` | anthropics |
-| PDF | `pdf` | anthropics |
-| Presentations | `pptx` | anthropics |
-| Spreadsheets | `xlsx` | anthropics |
-| Writing | `doc-coauthoring`, `code-documentation` | anthropics, wshobson |
-
-## Testing
-
-2 skills. Review, QA, regression work, and keeping product quality sharp.
-
-| Branch | Skills | Source |
-| --- | --- | --- |
-| Browser Automation | `playwright` | openai |
-| Web QA | `webapp-testing` | anthropics |
-
 ## Workflow
 
-3 skills. Execution patterns, prompting, ticketing, and operating rhythm.
+10 skills. Files, docs, planning, release work, and research-to-output flows.
 
 | Branch | Skills | Source |
 | --- | --- | --- |
-| Linear | `linear` | openai |
-| Planning | `notion-spec-to-implementation` | openai |
-| Release Notes | `changelog-generator` | composio |
+| Files & Docs | `pdf`, `xlsx`, `docx`, `pptx`, `doc-coauthoring`, `code-documentation` | anthropics, wshobson |
+| Planning | `linear`, `notion-spec-to-implementation` | openai |
+| Release | `changelog-generator` | composio |
+| Research & Writing | `content-research-writer` | composio |
 
-## Research
+## Agent Engineering
 
-2 skills. Competitive scans, discovery work, and synthesis that helps decisions.
-
-| Branch | Skills | Source |
-| --- | --- | --- |
-| Lead Research | `lead-research-assistant` | composio |
-| Writing | `content-research-writer` | composio |
-
-## Design
-
-4 skills. Visual systems, thematic work, creative direction, and media craft.
-
-| Branch | Skills | Source |
-| --- | --- | --- |
-| Canvas | `canvas-design` | anthropics |
-| Figma | `figma` | openai |
-| Generative Art | `algorithmic-art` | anthropics |
-| Video | `video-downloader` | composio |
-
-## Business
-
-3 skills. Brand, hiring, ops, and communication work around the product.
-
-| Branch | Skills | Source |
-| --- | --- | --- |
-| Brand | `brand-guidelines` | anthropics |
-| Career | `job-application` | MoizIbnYousaf |
-| Communication | `internal-comms` | anthropics |
-
-## AI
-
-6 skills. LLM applications, MCP servers, agent building, prompt engineering, and skills development.
+6 skills. MCP, skill-building, prompting discipline, and LLM application work.
 
 | Branch | Skills | Source |
 | --- | --- | --- |
 | Agent Behavior | `ask-questions-if-underspecified` | thsottiaux |
-| LLMs | `llm-application-dev` | wshobson |
+| LLM Apps | `llm-application-dev` | wshobson |
 | MCP | `mcp-builder` | anthropics |
-| OpenAI | `openai-docs` | openai |
 | Prompting | `best-practices` | MoizIbnYousaf |
-| Skills | `skill-creator` | anthropics |
-
-## DevOps
-
-2 skills. CI/CD, observability, deployment, and release infrastructure.
-
-| Branch | Skills | Source |
-| --- | --- | --- |
-| CI | `gh-fix-ci` | openai |
-| Observability | `sentry` | openai |
+| Provider Docs | `openai-docs` | openai |
+| Skill Authoring | `skill-creator` | anthropics |

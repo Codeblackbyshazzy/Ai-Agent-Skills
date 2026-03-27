@@ -1781,7 +1781,11 @@ function listSkills(category = null, tags = null, collectionId = null, workArea 
       ...Object.keys(byWorkArea).filter(area => !getWorkAreaMeta(data, area)).sort()
     ].filter((area, index, array) => array.indexOf(area) === index && byWorkArea[area]);
 
-    const counts = getCatalogCounts(data);
+    const counts = {
+      total: skills.length,
+      house: skills.filter((skill) => getTier(skill) === 'house').length,
+      upstream: skills.filter((skill) => getTier(skill) !== 'house').length,
+    };
     log(`\n${colors.bold}Curated Library${colors.reset}`);
     log(`${colors.dim}${formatCount(counts.total, 'pick')} on ${formatCount(orderedAreas.length, 'shelf', 'shelves')} · ${formatCount(counts.house, 'house copy', 'house copies')} · ${formatCount(counts.upstream, 'cataloged upstream pick', 'cataloged upstream picks')}${colors.reset}`);
     log(`${colors.dim}Small enough to scan. Opinionated enough to trust.${colors.reset}\n`);
@@ -3043,7 +3047,7 @@ ${colors.bold}Categories:${colors.reset}
   development, document, creative, business, productivity
 
 ${colors.bold}Work areas:${colors.reset}
-  frontend, backend, docs, testing, workflow, research, design, business, ai, devops, mobile
+  frontend, backend, mobile, workflow, agent-engineering
 
 ${colors.bold}Collections:${colors.reset}
   my-picks, build-apps, build-systems, test-and-debug, docs-and-research, swift-agent-skills
@@ -3056,8 +3060,8 @@ ${colors.bold}Examples:${colors.reset}
   npx ai-agent-skills install --collection swift-agent-skills -p
   npx ai-agent-skills anthropics/skills          Install repo skills to Claude + Codex
   npx ai-agent-skills install anthropics/skills  Install all skills from repo
-  npx ai-agent-skills search testing             Search the catalog
-  npx ai-agent-skills curate frontend-design --branch "UI Craft"
+  npx ai-agent-skills search workflow            Search the catalog
+  npx ai-agent-skills curate frontend-design --branch Implementation
   npx ai-agent-skills curate review
   npx ai-agent-skills vendor ~/repo --skill my-skill --area frontend --branch React --why "I want the local copy."
 

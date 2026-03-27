@@ -206,15 +206,15 @@ test('skills.json provenance metadata is valid', () => {
   });
 });
 
-test('frontend shelf distinguishes overlapping frontend picks by publisher', () => {
+test('frontend implementation shelf groups the overlapping frontend picks together', () => {
   const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'skills.json'), 'utf8'));
   const anthropicFrontend = data.skills.find(skill => skill.name === 'frontend-design');
   const openaiFrontend = data.skills.find(skill => skill.name === 'frontend-skill');
 
   assert(anthropicFrontend, 'Expected frontend-design to exist');
   assert(openaiFrontend, 'Expected frontend-skill to exist');
-  assertEqual(anthropicFrontend.branch, 'Frontend (Anthropic)');
-  assertEqual(openaiFrontend.branch, 'Frontend (OpenAI)');
+  assertEqual(anthropicFrontend.branch, 'Implementation');
+  assertEqual(openaiFrontend.branch, 'Implementation');
 });
 
 test('skills.json does not carry stale popularity metrics', () => {
@@ -315,7 +315,7 @@ test('skills.sh install spec is created for upstream GitHub skills', () => {
   const catalog = buildCatalog();
   const mirrorSkill = catalog.skills.find(skill => skill.name === 'figma');
   const snapshotSkill = catalog.skills.find(skill => skill.name === 'frontend-design');
-  const authoredSkill = catalog.skills.find(skill => skill.name === 'job-application');
+  const authoredSkill = catalog.skills.find(skill => skill.name === 'best-practices');
 
   const mirrorSpec = getSkillsInstallSpec(mirrorSkill, 'codex');
   assert(mirrorSpec, 'Expected mirror skill to expose a skills.sh install spec');
@@ -333,7 +333,7 @@ test('skills.sh install spec is created for upstream GitHub skills', () => {
   const authoredSpec = getSkillsInstallSpec(authoredSkill, 'codex');
   assert(authoredSpec, 'Expected GitHub-backed authored skill to expose a skills.sh install spec');
   assertContains(authoredSpec.command, 'https://github.com/MoizIbnYousaf/Ai-Agent-Skills');
-  assertContains(authoredSpec.command, '--skill job-application');
+  assertContains(authoredSpec.command, '--skill best-practices');
 });
 
 test('skills.sh install spec respects supported agent mappings', () => {
@@ -348,7 +348,7 @@ test('github install spec resolves upstream path for curated external skills', (
   const catalog = buildCatalog();
   const snapshotSkill = catalog.skills.find(skill => skill.name === 'frontend-design');
   const openaiSkill = catalog.skills.find(skill => skill.name === 'openai-docs');
-  const authoredSkill = catalog.skills.find(skill => skill.name === 'job-application');
+  const authoredSkill = catalog.skills.find(skill => skill.name === 'best-practices');
 
   const snapshotSpec = getGitHubInstallSpec(snapshotSkill, 'codex');
   assert(snapshotSpec, 'Expected curated external skill to expose a GitHub install spec');
@@ -611,11 +611,11 @@ test('doctor command works', () => {
 });
 
 test('validate command works on a bundled skill', () => {
-  const output = runArgs(['validate', 'skills/job-application']);
+  const output = runArgs(['validate', 'skills/best-practices']);
   assertContains(output, 'Validate Skill');
   assertContains(output, 'PASS');
   assertContains(output, 'Name:');
-  assertContains(output, 'job-application');
+  assertContains(output, 'best-practices');
 });
 
 test('unknown command shows error', () => {
@@ -625,12 +625,13 @@ test('unknown command shows error', () => {
 
 test('category filter works', () => {
   const output = run('list --category document');
-  assertContains(output, 'DOCS');
+  assertContains(output, 'WORKFLOW');
+  assertContains(output, 'pdf');
 });
 
 test('work area filter works', () => {
-  const output = run('list --work-area testing');
-  assertContains(output, 'TESTING');
+  const output = run('list --work-area frontend');
+  assertContains(output, 'FRONTEND');
   assertContains(output, 'webapp-testing');
 });
 
@@ -673,7 +674,7 @@ test('retired collection shows guidance', () => {
 });
 
 test('uncurated skill info shows no collections', () => {
-  const output = run('info internal-comms');
+  const output = run('info brand-guidelines');
   assertContains(output, 'Collections:');
   assertContains(output, 'none');
 });
@@ -1090,7 +1091,7 @@ test('collection install succeeds for project scope with mixed sources', () => {
     assertContains(combined, 'Installed 2 skill(s)');
 
     const installRoot = path.join(tmpDir, '.agents', 'skills');
-    ['playwright', 'webapp-testing', 'gh-fix-ci', 'sentry', 'best-practices'].forEach((skillName) => {
+    ['playwright', 'webapp-testing', 'gh-fix-ci', 'sentry', 'userinterface-wiki'].forEach((skillName) => {
       assert(
         fs.existsSync(path.join(installRoot, skillName, 'SKILL.md')),
         `Expected ${skillName} to be installed into the project collection target`
