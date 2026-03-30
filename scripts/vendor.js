@@ -4,7 +4,9 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const cliPath = path.join(__dirname, '..', 'cli.js');
-const result = spawnSync(process.execPath, [cliPath, 'vendor', ...process.argv.slice(2)], {
+const args = process.argv.slice(2);
+const hasExplicitFormat = args.includes('--format');
+const result = spawnSync(process.execPath, [cliPath, 'vendor', ...args, ...(hasExplicitFormat ? [] : ['--format', 'text'])], {
   stdio: 'inherit',
 });
 

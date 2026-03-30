@@ -23,8 +23,10 @@ const {
 const {
   addSkillToCollections,
   addUpstreamSkillFromDiscovery,
+  applyCurateChanges,
   buildReviewQueue,
   buildHouseCatalogEntry,
+  buildUpstreamCatalogEntry,
   commitCatalogData,
   curateSkill,
   ensureCollectionIdsExist,
@@ -113,12 +115,450 @@ const LEGACY_COLLECTION_ALIASES = {
 
 const SWIFT_SHORTCUT = 'swift';
 const UNIVERSAL_DEFAULT_AGENTS = ['claude', 'codex'];
+const FORMAT_ENUM = ['text', 'json'];
+const WORK_AREA_ENUM = ['frontend', 'backend', 'mobile', 'workflow', 'agent-engineering'];
+const CATEGORY_ENUM = ['development', 'document', 'creative', 'business', 'productivity'];
+const TRUST_ENUM = ['listed', 'verified'];
+const TIER_ENUM = ['house', 'upstream'];
+const DISTRIBUTION_ENUM = ['bundled', 'live'];
+const ORIGIN_ENUM = ['authored', 'curated', 'adapted'];
+const SYNC_MODE_ENUM = ['snapshot', 'live', 'authored', 'adapted'];
 
-function log(msg) { console.log(msg); }
-function success(msg) { console.log(`${colors.green}${colors.bold}${msg}${colors.reset}`); }
-function info(msg) { console.log(`${colors.cyan}${msg}${colors.reset}`); }
-function warn(msg) { console.log(`${colors.yellow}${msg}${colors.reset}`); }
-function error(msg) { console.log(`${colors.red}${msg}${colors.reset}`); }
+const FLAG_DEFINITIONS = {
+  format: { type: 'enum', enum: FORMAT_ENUM, default: null, description: 'Output format.' },
+  project: { type: 'boolean', alias: '-p', default: false, description: 'Target project scope.' },
+  global: { type: 'boolean', alias: '-g', default: false, description: 'Target global scope.' },
+  skill: { type: 'string[]', default: [], description: 'Select named skills from a source.' },
+  list: { type: 'boolean', default: false, description: 'List skills without installing or mutating.' },
+  yes: { type: 'boolean', alias: '-y', default: false, description: 'Skip interactive confirmation.' },
+  all: { type: 'boolean', default: false, description: 'Apply to both global and project scope.' },
+  dryRun: { type: 'boolean', alias: '-n', default: false, description: 'Show what would happen without changing files.' },
+  noDeps: { type: 'boolean', default: false, description: 'Skip dependency expansion for catalog installs.' },
+  agent: { type: 'string', alias: '-a', default: null, description: 'Legacy explicit agent target.' },
+  agents: { type: 'string[]', default: [], description: 'Legacy explicit agent targets.' },
+  installed: { type: 'boolean', alias: '-i', default: false, description: 'Show installed skills instead of the catalog.' },
+  category: { type: 'enum', alias: '-c', enum: CATEGORY_ENUM, default: null, description: 'Filter by category.' },
+  area: { type: 'enum', enum: WORK_AREA_ENUM, default: null, description: 'Filter or place a skill into a work area shelf.' },
+  collection: { type: 'string', default: null, description: 'Filter or target a curated collection.' },
+  removeFromCollection: { type: 'string', default: null, description: 'Remove a skill from a curated collection.' },
+  tags: { type: 'string', alias: '-t', default: null, description: 'Comma-separated tags.' },
+  labels: { type: 'string', default: null, description: 'Comma-separated labels.' },
+  notes: { type: 'string', default: null, description: 'Curator notes.' },
+  why: { type: 'string', default: null, description: 'Why the skill belongs in the library.' },
+  branch: { type: 'string', default: null, description: 'Shelf branch label.' },
+  trust: { type: 'enum', enum: TRUST_ENUM, default: null, description: 'Trust level.' },
+  description: { type: 'string', default: null, description: 'Skill description override.' },
+  lastVerified: { type: 'string', default: null, description: 'Last verification date.' },
+  feature: { type: 'boolean', default: false, description: 'Mark a skill as featured.' },
+  unfeature: { type: 'boolean', default: false, description: 'Remove featured state.' },
+  verify: { type: 'boolean', default: false, description: 'Mark a skill as verified.' },
+  clearVerified: { type: 'boolean', default: false, description: 'Clear verified state.' },
+  remove: { type: 'boolean', default: false, description: 'Remove a skill from the catalog.' },
+  json: { type: 'boolean', default: false, description: 'Help/describe: emit schema JSON. Mutations: read a JSON payload from stdin.' },
+  fields: { type: 'string', default: null, description: 'Comma-separated field mask for JSON read output.' },
+  limit: { type: 'integer', default: null, description: 'Limit JSON read results.' },
+  offset: { type: 'integer', default: null, description: 'Offset JSON read results.' },
+};
+
+const COMMAND_REGISTRY = {
+  browse: {
+    aliases: ['b'],
+    summary: 'Browse the library in the terminal.',
+    args: [],
+    flags: ['project', 'global', 'agent', 'format'],
+  },
+  [SWIFT_SHORTCUT]: {
+    aliases: [],
+    summary: 'Install the curated Swift hub.',
+    args: [],
+    flags: ['project', 'global', 'all', 'list', 'dryRun', 'format'],
+  },
+  list: {
+    aliases: ['ls'],
+    summary: 'List catalog skills.',
+    args: [],
+    flags: ['installed', 'category', 'tags', 'collection', 'area', 'project', 'global', 'fields', 'limit', 'offset', 'format'],
+  },
+  collections: {
+    aliases: [],
+    summary: 'Browse curated collections.',
+    args: [],
+    flags: ['format'],
+  },
+  install: {
+    aliases: ['i'],
+    summary: 'Install skills from the library or an external source.',
+    args: [{ name: 'source', required: false, type: 'string' }],
+    flags: ['project', 'global', 'collection', 'skill', 'list', 'yes', 'all', 'dryRun', 'noDeps', 'agent', 'agents', 'format'],
+  },
+  add: {
+    aliases: [],
+    summary: 'Add a bundled pick, upstream repo skill, or house copy to a workspace.',
+    args: [{ name: 'source', required: true, type: 'string' }],
+    flags: ['list', 'skill', 'area', 'branch', 'category', 'tags', 'labels', 'notes', 'trust', 'why', 'description', 'collection', 'lastVerified', 'feature', 'clearVerified', 'remove', 'dryRun', 'json', 'format'],
+  },
+  uninstall: {
+    aliases: ['remove', 'rm'],
+    summary: 'Remove an installed skill.',
+    args: [{ name: 'name', required: true, type: 'string' }],
+    flags: ['project', 'global', 'agent', 'agents', 'dryRun', 'json', 'format'],
+  },
+  sync: {
+    aliases: ['update', 'upgrade'],
+    summary: 'Refresh installed skills.',
+    args: [{ name: 'name', required: false, type: 'string' }],
+    flags: ['all', 'project', 'global', 'agent', 'agents', 'dryRun', 'format'],
+  },
+  search: {
+    aliases: ['s', 'find'],
+    summary: 'Search the catalog.',
+    args: [{ name: 'query', required: true, type: 'string' }],
+    flags: ['category', 'collection', 'area', 'fields', 'limit', 'offset', 'format'],
+  },
+  info: {
+    aliases: ['show'],
+    summary: 'Show skill details and provenance.',
+    args: [{ name: 'name', required: true, type: 'string' }],
+    flags: ['fields', 'format'],
+  },
+  preview: {
+    aliases: [],
+    summary: 'Preview a skill body or upstream summary.',
+    args: [{ name: 'name', required: true, type: 'string' }],
+    flags: ['format'],
+  },
+  catalog: {
+    aliases: [],
+    summary: 'Add upstream skills to the catalog without vendoring files.',
+    args: [{ name: 'repo', required: true, type: 'string' }],
+    flags: ['list', 'skill', 'area', 'branch', 'category', 'tags', 'labels', 'notes', 'trust', 'why', 'description', 'collection', 'dryRun', 'json', 'format'],
+  },
+  curate: {
+    aliases: [],
+    summary: 'Edit catalog metadata and placement.',
+    args: [{ name: 'name', required: true, type: 'string' }],
+    flags: ['area', 'branch', 'category', 'tags', 'labels', 'notes', 'trust', 'why', 'description', 'collection', 'removeFromCollection', 'feature', 'unfeature', 'verify', 'clearVerified', 'remove', 'yes', 'dryRun', 'json', 'format'],
+  },
+  vendor: {
+    aliases: [],
+    summary: 'Create a house copy from an explicit source.',
+    args: [{ name: 'source', required: true, type: 'string' }],
+    flags: ['list', 'skill', 'area', 'branch', 'category', 'tags', 'labels', 'notes', 'trust', 'why', 'description', 'collection', 'lastVerified', 'feature', 'clearVerified', 'remove', 'dryRun', 'json', 'format'],
+  },
+  check: {
+    aliases: [],
+    summary: 'Check installed skills for potential updates.',
+    args: [],
+    flags: ['project', 'global', 'format'],
+  },
+  doctor: {
+    aliases: [],
+    summary: 'Diagnose install issues.',
+    args: [],
+    flags: ['agent', 'agents', 'format'],
+  },
+  validate: {
+    aliases: [],
+    summary: 'Validate a skill directory.',
+    args: [{ name: 'path', required: false, type: 'string' }],
+    flags: ['format'],
+  },
+  init: {
+    aliases: [],
+    summary: 'Create a new SKILL.md template.',
+    args: [{ name: 'name', required: false, type: 'string' }],
+    flags: ['format'],
+  },
+  'init-library': {
+    aliases: [],
+    summary: 'Create a managed library workspace.',
+    args: [{ name: 'name', required: true, type: 'string' }],
+    flags: ['dryRun', 'json', 'format'],
+  },
+  'build-docs': {
+    aliases: [],
+    summary: 'Regenerate README.md and WORK_AREAS.md in a workspace.',
+    args: [],
+    flags: ['format'],
+  },
+  config: {
+    aliases: [],
+    summary: 'Manage CLI settings.',
+    args: [],
+    flags: ['format'],
+  },
+  help: {
+    aliases: ['--help', '-h'],
+    summary: 'Show CLI help.',
+    args: [{ name: 'command', required: false, type: 'string' }],
+    flags: ['format', 'json'],
+  },
+  describe: {
+    aliases: [],
+    summary: 'Show machine-readable schema for one command.',
+    args: [{ name: 'command', required: true, type: 'string' }],
+    flags: ['format', 'json'],
+  },
+  version: {
+    aliases: ['--version', '-v'],
+    summary: 'Show CLI version.',
+    args: [],
+    flags: ['format'],
+  },
+};
+
+const COMMAND_ALIAS_MAP = Object.entries(COMMAND_REGISTRY).reduce((map, [name, definition]) => {
+  map.set(name, name);
+  for (const alias of definition.aliases || []) {
+    map.set(alias, name);
+  }
+  return map;
+}, new Map());
+
+function resolveCommandAlias(command) {
+  return COMMAND_ALIAS_MAP.get(command) || command;
+}
+
+function getCommandDefinition(command) {
+  const canonical = resolveCommandAlias(command);
+  return COMMAND_REGISTRY[canonical] || null;
+}
+
+function getFlagSchema(flagName) {
+  const definition = FLAG_DEFINITIONS[flagName];
+  if (!definition) return null;
+  return {
+    name: flagName,
+    ...definition,
+  };
+}
+
+function getCommandSchema(command) {
+  const canonical = resolveCommandAlias(command);
+  const definition = getCommandDefinition(canonical);
+  if (!definition) return null;
+
+  return {
+    name: canonical,
+    aliases: definition.aliases || [],
+    summary: definition.summary,
+    args: definition.args || [],
+    flags: (definition.flags || [])
+      .map((flagName) => getFlagSchema(flagName))
+      .filter(Boolean),
+  };
+}
+
+function buildHelpSchema(command = null) {
+  const pkg = require('./package.json');
+  const selected = command ? resolveCommandAlias(command) : null;
+  const commandSchema = selected ? getCommandSchema(selected) : null;
+
+  return {
+    binary: 'ai-agent-skills',
+    version: pkg.version,
+    defaults: {
+      interactiveOutput: 'text',
+      nonTtyOutput: 'json',
+    },
+    sharedEnums: {
+      format: FORMAT_ENUM,
+      workArea: WORK_AREA_ENUM,
+      category: CATEGORY_ENUM,
+      trust: TRUST_ENUM,
+      tier: TIER_ENUM,
+      distribution: DISTRIBUTION_ENUM,
+      origin: ORIGIN_ENUM,
+      syncMode: SYNC_MODE_ENUM,
+    },
+    globalFlags: ['format', 'json', 'project', 'global', 'agent', 'agents', 'dryRun']
+      .map((flagName) => getFlagSchema(flagName))
+      .filter(Boolean),
+    commands: commandSchema
+      ? [commandSchema]
+      : Object.keys(COMMAND_REGISTRY).map((name) => getCommandSchema(name)),
+  };
+}
+
+function emitSchemaHelp(command = null) {
+  const schema = buildHelpSchema(command);
+  emitJsonEnvelope('help', schema);
+}
+
+const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
+let OUTPUT_STATE = {
+  format: 'text',
+  explicitFormat: false,
+  command: null,
+  emitted: false,
+  data: null,
+  messages: [],
+  errors: [],
+};
+
+function stripAnsi(value) {
+  return String(value == null ? '' : value).replace(ANSI_PATTERN, '');
+}
+
+function resolveOutputFormat(parsed = {}) {
+  if (!parsed.format) return process.stdout.isTTY ? 'text' : 'json';
+  if (!FORMAT_ENUM.includes(parsed.format)) {
+    throw new Error(`Invalid format "${parsed.format}". Expected one of: ${FORMAT_ENUM.join(', ')}`);
+  }
+  return parsed.format;
+}
+
+function resetOutputState(format = 'text', command = null, explicitFormat = false) {
+  OUTPUT_STATE = {
+    format,
+    explicitFormat,
+    command,
+    emitted: false,
+    data: null,
+    messages: [],
+    errors: [],
+  };
+}
+
+function isJsonOutput() {
+  return OUTPUT_STATE.format === 'json';
+}
+
+function captureMessage(level, value) {
+  const message = stripAnsi(value);
+  OUTPUT_STATE.messages.push({ level, message });
+  if (level === 'error') {
+    OUTPUT_STATE.errors.push({ code: 'ERROR', message, hint: null });
+  }
+}
+
+function log(msg) {
+  if (isJsonOutput()) {
+    captureMessage('log', msg);
+    return;
+  }
+  console.log(msg);
+}
+
+function success(msg) {
+  if (isJsonOutput()) {
+    captureMessage('success', msg);
+    return;
+  }
+  console.log(`${colors.green}${colors.bold}${msg}${colors.reset}`);
+}
+
+function info(msg) {
+  if (isJsonOutput()) {
+    captureMessage('info', msg);
+    return;
+  }
+  console.log(`${colors.cyan}${msg}${colors.reset}`);
+}
+
+function warn(msg) {
+  if (isJsonOutput()) {
+    captureMessage('warn', msg);
+    return;
+  }
+  console.log(`${colors.yellow}${msg}${colors.reset}`);
+}
+
+function error(msg) {
+  if (isJsonOutput()) {
+    captureMessage('error', msg);
+    return;
+  }
+  console.log(`${colors.red}${msg}${colors.reset}`);
+}
+
+function setJsonResultData(data) {
+  OUTPUT_STATE.data = data;
+}
+
+function emitJsonEnvelope(command, data = null, errors = null, options = {}) {
+  const payload = {
+    command: resolveCommandAlias(command || OUTPUT_STATE.command || 'help'),
+    status: options.status || (process.exitCode ? 'error' : 'ok'),
+    data: data != null ? data : (OUTPUT_STATE.data != null ? OUTPUT_STATE.data : { messages: OUTPUT_STATE.messages }),
+    errors: errors != null ? errors : OUTPUT_STATE.errors,
+  };
+  console.log(JSON.stringify(payload, null, 2));
+  OUTPUT_STATE.emitted = true;
+}
+
+function emitJsonRecord(command, data = null, errors = null, options = {}) {
+  const payload = {
+    command: resolveCommandAlias(command || OUTPUT_STATE.command || 'help'),
+    status: options.status || (process.exitCode ? 'error' : 'ok'),
+    data: data != null ? data : null,
+    errors: errors != null ? errors : [],
+  };
+  console.log(JSON.stringify(payload));
+  OUTPUT_STATE.emitted = true;
+}
+
+function finalizeJsonOutput() {
+  if (!isJsonOutput() || OUTPUT_STATE.emitted) return;
+  emitJsonEnvelope(OUTPUT_STATE.command);
+}
+
+function isMachineReadableOutput() {
+  return isJsonOutput() || (!process.stdout.isTTY && !OUTPUT_STATE.explicitFormat);
+}
+
+function sanitizeMachineField(value) {
+  return String(value == null ? '' : value)
+    .replace(/\t/g, ' ')
+    .replace(/\r?\n/g, ' ')
+    .trim();
+}
+
+function emitMachineLine(kind, fields = []) {
+  log([kind, ...fields.map(sanitizeMachineField)].join('\t'));
+}
+
+function emitActionableError(message, hint = '', options = {}) {
+  if (isJsonOutput()) {
+    OUTPUT_STATE.errors.push({
+      code: options.code || 'ERROR',
+      message: stripAnsi(message),
+      hint: hint ? stripAnsi(hint) : null,
+    });
+    return;
+  }
+
+  if (options.machine || isMachineReadableOutput()) {
+    emitMachineLine('ERROR', [options.code || 'ERROR', message]);
+    if (hint) {
+      emitMachineLine('HINT', [hint]);
+    }
+    return;
+  }
+
+  error(message);
+  if (hint) {
+    log(`${colors.dim}${hint}${colors.reset}`);
+  }
+}
+
+function emitDryRunResult(command, actions = [], extra = {}) {
+  if (isJsonOutput()) {
+    setJsonResultData({
+      dryRun: true,
+      actions,
+      ...extra,
+    });
+    return;
+  }
+
+  log(`\n${colors.bold}Dry Run${colors.reset} (no changes made)\n`);
+  for (const action of actions) {
+    const target = action.target ? `${action.target}` : action.type;
+    const detail = action.detail ? ` ${colors.dim}${action.detail}${colors.reset}` : '';
+    log(`  ${colors.green}${target}${colors.reset}${detail}`);
+  }
+}
 
 let ACTIVE_LIBRARY_CONTEXT = getBundledLibraryContext();
 
@@ -314,6 +754,99 @@ function getInstallStateText(skillName, index = buildInstallStateIndex()) {
   return formatInstallStateLabel(getInstallState(index, skillName));
 }
 
+function serializeSkillForJson(data, skill, installStateIndex = null) {
+  const safeDescription = sanitizeSkillContent(skill.description || '').content;
+  const safeWhyHere = sanitizeSkillContent(skill.whyHere || '').content;
+  return {
+    name: skill.name,
+    description: safeDescription,
+    workArea: getSkillWorkArea(skill) || null,
+    branch: getSkillBranch(skill) || null,
+    category: skill.category || null,
+    tier: getTier(skill),
+    distribution: getDistribution(skill),
+    source: skill.source || null,
+    installSource: skill.installSource || null,
+    trust: getTrust(skill),
+    origin: getOrigin(skill),
+    featured: !!skill.featured,
+    verified: !!skill.verified,
+    tags: Array.isArray(skill.tags) ? skill.tags : [],
+    collections: getCollectionsForSkill(data, skill.name).map((collection) => collection.id),
+    installState: installStateIndex ? (getInstallStateText(skill.name, installStateIndex) || null) : null,
+    whyHere: safeWhyHere,
+  };
+}
+
+const DEFAULT_LIST_JSON_FIELDS = ['name', 'tier', 'workArea', 'description'];
+
+function parseFieldMask(value, fallback = null) {
+  if (value == null) return fallback;
+  const fields = String(value)
+    .split(',')
+    .map((field) => field.trim())
+    .filter(Boolean);
+  return fields.length > 0 ? [...new Set(fields)] : fallback;
+}
+
+function selectObjectFields(record, fields) {
+  if (!fields || fields.length === 0) return record;
+  return fields.reduce((selected, field) => {
+    if (Object.prototype.hasOwnProperty.call(record, field)) {
+      selected[field] = record[field];
+    }
+    return selected;
+  }, {});
+}
+
+function paginateItems(items, limit = null, offset = null) {
+  const normalizedOffset = offset == null ? 0 : offset;
+  const normalizedLimit = limit == null ? null : limit;
+  const paged = normalizedLimit == null
+    ? items.slice(normalizedOffset)
+    : items.slice(normalizedOffset, normalizedOffset + normalizedLimit);
+
+  return {
+    items: paged,
+    limit: normalizedLimit,
+    offset: normalizedOffset,
+    returned: paged.length,
+    total: items.length,
+  };
+}
+
+function resolveReadJsonOptions(parsed, commandName) {
+  const fields = parseFieldMask(parsed.fields);
+  const limit = parsed.limit;
+  const offset = parsed.offset;
+
+  if (limit != null && (!Number.isInteger(limit) || limit < 0)) {
+    emitActionableError(
+      `Invalid --limit value for ${commandName}.`,
+      'Use a non-negative integer such as `--limit 10`.',
+      { code: 'INVALID_LIMIT' }
+    );
+    process.exitCode = 1;
+    return null;
+  }
+
+  if (offset != null && (!Number.isInteger(offset) || offset < 0)) {
+    emitActionableError(
+      `Invalid --offset value for ${commandName}.`,
+      'Use a non-negative integer such as `--offset 20`.',
+      { code: 'INVALID_OFFSET' }
+    );
+    process.exitCode = 1;
+    return null;
+  }
+
+  return {
+    fields,
+    limit,
+    offset,
+  };
+}
+
 function colorizeInstallStateLabel(label) {
   if (!label) return '';
   return `${colors.cyan}[${label}]${colors.reset}`;
@@ -353,6 +886,170 @@ function readSkillMeta(skillPath) {
 }
 
 // ============ SECURITY VALIDATION ============
+
+const AGENT_INPUT_HINT = 'Remove path traversal (`../`), percent-encoded segments, fragments/query params, and control characters from the input.';
+const AGENT_IDENTIFIER_FIELDS = new Set([
+  'source',
+  'name',
+  'skill',
+  'skillFilter',
+  'collection',
+  'removeFromCollection',
+  'collectionRemove',
+  'workArea',
+  'area',
+  'category',
+  'trust',
+  'ref',
+  'id',
+]);
+const AGENT_FREEFORM_FIELDS = new Set([
+  'why',
+  'whyHere',
+  'notes',
+  'description',
+  'branch',
+  'tags',
+  'labels',
+  'title',
+]);
+const PROMPT_INJECTION_PATTERNS = [
+  /<\/?system>/i,
+  /\bignore\s+(?:all\s+)?previous\b/i,
+  /\byou are now\b/i,
+];
+const BASE64ISH_LINE_PATTERN = /^[A-Za-z0-9+/]{80,}={0,2}$/;
+
+function validateAgentInput(value, fieldName, options = {}) {
+  if (value === null || value === undefined) return true;
+  if (typeof value !== 'string') return true;
+
+  const stringValue = String(value);
+
+  if (/[\x00-\x1f\x7f]/.test(stringValue)) {
+    throw new Error(`Invalid ${fieldName}: control characters are not allowed.`);
+  }
+
+  if (options.rejectPercentEncoding && /%(?:2e|2f|5c|00|23|3f)/i.test(stringValue)) {
+    throw new Error(`Invalid ${fieldName}: percent-encoded path or query segments are not allowed.`);
+  }
+
+  if (options.rejectTraversal && /(?:^|[\\/])\.\.(?:[\\/]|$)/.test(stringValue)) {
+    throw new Error(`Invalid ${fieldName}: path traversal is not allowed.`);
+  }
+
+  if (!options.allowQuery && /[?#]/.test(stringValue)) {
+    throw new Error(`Invalid ${fieldName}: embedded query parameters or fragments are not allowed.`);
+  }
+
+  return true;
+}
+
+function validateAgentValue(value, fieldName, mode = 'text') {
+  const options = mode === 'identifier'
+    ? { allowQuery: false, rejectTraversal: true, rejectPercentEncoding: true }
+    : { allowQuery: true, rejectTraversal: false, rejectPercentEncoding: false };
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => validateAgentValue(item, `${fieldName}[${index}]`, mode));
+    return true;
+  }
+
+  return validateAgentInput(value, fieldName, options);
+}
+
+function validateAgentPayloadValue(value, fieldName = 'payload', parentKey = '') {
+  if (value === null || value === undefined) return;
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => validateAgentPayloadValue(item, `${fieldName}[${index}]`, parentKey));
+    return;
+  }
+
+  if (typeof value === 'string') {
+    const mode = AGENT_IDENTIFIER_FIELDS.has(parentKey) || parentKey === 'workAreas' || parentKey === 'collections' || parentKey === 'skills'
+      ? 'identifier'
+      : 'text';
+    validateAgentValue(value, fieldName, mode);
+    return;
+  }
+
+  if (typeof value === 'object') {
+    for (const [key, nestedValue] of Object.entries(value)) {
+      validateAgentPayloadValue(nestedValue, fieldName === 'payload' ? key : `${fieldName}.${key}`, key);
+    }
+  }
+}
+
+function sanitizeSkillContent(content) {
+  const source = String(content == null ? '' : content);
+  const lines = source.split(/\r?\n/);
+  let sanitized = false;
+  const kept = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return true;
+    if (PROMPT_INJECTION_PATTERNS.some((pattern) => pattern.test(line))) {
+      sanitized = true;
+      return false;
+    }
+    if (BASE64ISH_LINE_PATTERN.test(trimmed)) {
+      sanitized = true;
+      return false;
+    }
+    return true;
+  });
+
+  let safeContent = kept.join('\n');
+  if (sanitized) {
+    safeContent = safeContent.replace(/\n{3,}/g, '\n\n').trim();
+    if (!safeContent) {
+      safeContent = '[sanitized suspicious content removed]';
+    }
+  }
+
+  return {
+    content: sanitized ? safeContent : source,
+    sanitized,
+  };
+}
+
+function validateParsedAgentInputs(command, parsed, payload = null) {
+  const canonical = resolveCommandAlias(command || parsed.command || '');
+  const sourceLikeCommands = new Set(['install', 'add', 'catalog', 'vendor']);
+  const nameLikeCommands = new Set(['info', 'show', 'preview', 'uninstall', 'remove', 'rm', 'sync', 'update', 'upgrade', 'curate']);
+  const freeformParamCommands = new Set(['search', 'help', 'describe']);
+
+  validateAgentValue(parsed.fields, 'fields', 'text');
+  validateAgentValue(parsed.collection, 'collection', 'identifier');
+  validateAgentValue(parsed.collectionRemove, 'removeFromCollection', 'identifier');
+  validateAgentValue(parsed.workArea, 'workArea', 'identifier');
+  validateAgentValue(parsed.category, 'category', 'identifier');
+  validateAgentValue(parsed.trust, 'trust', 'identifier');
+  validateAgentValue(parsed.lastVerified, 'lastVerified', 'text');
+  validateAgentValue(parsed.branch, 'branch', 'text');
+  validateAgentValue(parsed.tags, 'tags', 'text');
+  validateAgentValue(parsed.labels, 'labels', 'text');
+  validateAgentValue(parsed.notes, 'notes', 'text');
+  validateAgentValue(parsed.why, 'why', 'text');
+  validateAgentValue(parsed.description, 'description', 'text');
+  validateAgentValue(parsed.skillFilters, 'skill', 'identifier');
+
+  if (sourceLikeCommands.has(canonical)) {
+    validateAgentValue(parsed.param, canonical === 'install' ? 'source' : 'source', 'identifier');
+  } else if (nameLikeCommands.has(canonical)) {
+    validateAgentValue(parsed.param, 'name', 'identifier');
+  } else if (canonical === 'init-library') {
+    validateAgentValue(parsed.param, 'name', 'identifier');
+  } else if (freeformParamCommands.has(canonical)) {
+    validateAgentValue(parsed.param, canonical === 'search' ? 'query' : 'command', 'text');
+  }
+
+  if (payload) {
+    validateAgentPayloadValue(payload);
+  }
+
+  return true;
+}
 
 function validateSkillName(name) {
   if (!name || typeof name !== 'string') {
@@ -445,8 +1142,7 @@ function loadSkillsJson() {
   try {
     return loadCatalogData(getActiveLibraryContext());
   } catch (e) {
-    error(`Failed to load skills.json: ${e.message}`);
-    process.exit(1);
+    throw new Error(`Failed to load skills.json: ${e.message}`);
   }
 }
 
@@ -534,6 +1230,47 @@ function getCollectionBadgeText(data, skill, limit = 2) {
 
 function getCollectionStartHere(collection, limit = 3) {
   return (collection?.skills || []).slice(0, limit);
+}
+
+function validateRemoteWorkspaceCatalog(data) {
+  const errors = [];
+  const names = new Set();
+
+  for (const skill of data.skills || []) {
+    if (!skill || !skill.name) continue;
+    if (names.has(skill.name)) {
+      errors.push(`Duplicate skill name: ${skill.name}`);
+      break;
+    }
+    names.add(skill.name);
+  }
+
+  const dependencyGraph = buildDependencyGraph(data);
+  errors.push(...dependencyGraph.errors);
+
+  return errors;
+}
+
+function getCatalogSkillRelativePath(skill) {
+  if (skill && typeof skill.path === 'string' && skill.path.trim()) {
+    return skill.path.trim().replace(/\\/g, '/');
+  }
+  return `skills/${skill?.name || ''}`;
+}
+
+function resolveCatalogSkillSourcePath(skillName, { sourceContext = getActiveLibraryContext(), skill = null } = {}) {
+  return path.join(sourceContext.rootDir, getCatalogSkillRelativePath(skill || { name: skillName }));
+}
+
+function hasLocalCatalogSkillFiles(skill, sourceContext = getActiveLibraryContext()) {
+  if (!skill || !sourceContext) return false;
+  return fs.existsSync(resolveCatalogSkillSourcePath(skill.name, { sourceContext, skill }));
+}
+
+function shouldTreatCatalogSkillAsHouse(skill, sourceContext = getActiveLibraryContext()) {
+  if (!skill) return false;
+  if (hasLocalCatalogSkillFiles(skill, sourceContext)) return true;
+  return skill.tier !== 'upstream' || !skill.source;
 }
 
 function getSearchMatchScore(skill, query) {
@@ -746,6 +1483,8 @@ function parseArgs(args) {
   const result = {
     command: null,
     param: null,
+    format: null,
+    json: false,
     scope: null,          // v3: 'global', 'project', or null (default)
     agents: [],           // Legacy: array of agents
     allAgents: false,
@@ -769,6 +1508,9 @@ function parseArgs(args) {
     workArea: null,
     collection: null,
     collectionRemove: null,
+    fields: null,
+    limit: null,
+    offset: null,
     skillFilters: [],     // v3: --skill flag values
     listMode: false,      // v3: --list flag
     yes: false,           // v3: --yes flag (non-interactive)
@@ -783,6 +1525,13 @@ function parseArgs(args) {
     }
     else if (arg === '-g' || arg === '--global') {
       result.scope = 'global';
+    }
+    else if (arg === '--format') {
+      result.format = args[i + 1] || null;
+      i++;
+    }
+    else if (arg === '--json') {
+      result.json = true;
     }
     // v3 --skill filter
     else if (arg === '--skill') {
@@ -902,6 +1651,20 @@ function parseArgs(args) {
       result.collectionRemove = args[i + 1];
       i++;
     }
+    else if (arg === '--fields') {
+      result.fields = args[i + 1] || null;
+      i++;
+    }
+    else if (arg === '--limit') {
+      const value = args[i + 1];
+      result.limit = value == null ? NaN : Number.parseInt(value, 10);
+      i++;
+    }
+    else if (arg === '--offset') {
+      const value = args[i + 1];
+      result.offset = value == null ? NaN : Number.parseInt(value, 10);
+      i++;
+    }
     else if (arg.startsWith('--')) {
       const potentialAgent = arg.replace(/^--/, '');
       if (validAgents.includes(potentialAgent)) {
@@ -932,6 +1695,134 @@ function parseArgs(args) {
   }
 
   return result;
+}
+
+const JSON_INPUT_COMMANDS = new Set(['add', 'catalog', 'vendor', 'curate', 'init-library', 'uninstall']);
+const INVALID_JSON_INPUT = Symbol('invalid-json-input');
+
+async function readJsonStdin() {
+  const chunks = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  const raw = Buffer.concat(chunks).toString('utf8').trim();
+  if (!raw) {
+    throw new Error('Expected a JSON object on stdin when using --json.');
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`Invalid JSON payload: ${error.message}`);
+  }
+
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('JSON payload must be an object.');
+  }
+
+  return payload;
+}
+
+async function parseJsonInput(command, parsed) {
+  const canonical = resolveCommandAlias(command || '');
+  if (!parsed.json || !JSON_INPUT_COMMANDS.has(canonical)) {
+    return null;
+  }
+
+  try {
+    return await readJsonStdin();
+  } catch (error) {
+    emitActionableError(
+      error.message,
+      'Pipe a JSON object to stdin, for example: echo \'{"name":"frontend-design"}\' | npx ai-agent-skills add --json',
+      { code: 'INVALID_JSON_INPUT' }
+    );
+    process.exitCode = 1;
+    return INVALID_JSON_INPUT;
+  }
+}
+
+function getPayloadValue(payload, ...keys) {
+  if (!payload || typeof payload !== 'object') return undefined;
+  for (const key of keys) {
+    if (payload[key] !== undefined) {
+      return payload[key];
+    }
+  }
+  return undefined;
+}
+
+function mergeMutationOption(cliValue, payload, ...keys) {
+  return cliValue !== null && cliValue !== undefined ? cliValue : getPayloadValue(payload, ...keys);
+}
+
+function mergeMutationNullableBoolean(cliValue, payload, ...keys) {
+  if (cliValue !== null && cliValue !== undefined) {
+    return cliValue;
+  }
+  const value = getPayloadValue(payload, ...keys);
+  return value === undefined ? null : Boolean(value);
+}
+
+function mergeMutationBoolean(cliValue, payload, ...keys) {
+  if (cliValue) return true;
+  const value = getPayloadValue(payload, ...keys);
+  return value === undefined ? false : Boolean(value);
+}
+
+function resolveMutationSource(param, payload, options = {}) {
+  if (param) return param;
+  const source = getPayloadValue(payload, 'source');
+  if (source !== undefined) return source;
+  return options.allowNameFallback ? (getPayloadValue(payload, 'name') || null) : null;
+}
+
+function buildWorkspaceMutationOptions(parsed, payload = {}) {
+  return {
+    list: mergeMutationBoolean(parsed.listMode, payload, 'list'),
+    skillFilter: parsed.skillFilters.length > 0 ? parsed.skillFilters[0] : getPayloadValue(payload, 'skill', 'name'),
+    area: mergeMutationOption(parsed.workArea, payload, 'workArea', 'area'),
+    branch: mergeMutationOption(parsed.branch, payload, 'branch'),
+    category: mergeMutationOption(parsed.category, payload, 'category'),
+    tags: mergeMutationOption(parsed.tags, payload, 'tags'),
+    labels: mergeMutationOption(parsed.labels, payload, 'labels'),
+    notes: mergeMutationOption(parsed.notes, payload, 'notes'),
+    trust: mergeMutationOption(parsed.trust, payload, 'trust'),
+    whyHere: mergeMutationOption(parsed.why, payload, 'whyHere', 'why'),
+    description: mergeMutationOption(parsed.description, payload, 'description'),
+    collections: mergeMutationOption(parsed.collection, payload, 'collections', 'collection'),
+    lastVerified: mergeMutationOption(parsed.lastVerified, payload, 'lastVerified'),
+    featured: mergeMutationNullableBoolean(parsed.featured, payload, 'featured'),
+    clearVerified: mergeMutationBoolean(parsed.clearVerified, payload, 'clearVerified'),
+    remove: mergeMutationBoolean(parsed.remove, payload, 'remove'),
+    ref: getArgValue(process.argv, '--ref') || getPayloadValue(payload, 'ref') || null,
+    dryRun: mergeMutationBoolean(parsed.dryRun, payload, 'dryRun'),
+  };
+}
+
+function buildCurateParsed(parsed, payload = {}) {
+  return {
+    ...parsed,
+    workArea: mergeMutationOption(parsed.workArea, payload, 'workArea', 'area'),
+    branch: mergeMutationOption(parsed.branch, payload, 'branch'),
+    category: mergeMutationOption(parsed.category, payload, 'category'),
+    tags: mergeMutationOption(parsed.tags, payload, 'tags'),
+    labels: mergeMutationOption(parsed.labels, payload, 'labels'),
+    notes: mergeMutationOption(parsed.notes, payload, 'notes'),
+    trust: mergeMutationOption(parsed.trust, payload, 'trust'),
+    why: mergeMutationOption(parsed.why, payload, 'whyHere', 'why'),
+    description: mergeMutationOption(parsed.description, payload, 'description'),
+    collection: mergeMutationOption(parsed.collection, payload, 'collections', 'collection'),
+    collectionRemove: mergeMutationOption(parsed.collectionRemove, payload, 'removeFromCollection', 'collectionRemove'),
+    featured: mergeMutationNullableBoolean(parsed.featured, payload, 'featured'),
+    lastVerified: mergeMutationOption(parsed.lastVerified, payload, 'lastVerified'),
+    clearVerified: mergeMutationBoolean(parsed.clearVerified, payload, 'clearVerified'),
+    remove: mergeMutationBoolean(parsed.remove, payload, 'remove'),
+    yes: mergeMutationBoolean(parsed.yes, payload, 'yes'),
+    dryRun: mergeMutationBoolean(parsed.dryRun, payload, 'dryRun'),
+  };
 }
 
 // v3: resolve install target path from scope/agent flags
@@ -985,35 +1876,7 @@ function resolveScopeLabel(targetPath) {
 }
 
 function isKnownCommand(command) {
-  return new Set([
-    'browse', 'b',
-    SWIFT_SHORTCUT,
-    'list', 'ls',
-    'collections',
-    'install', 'i', 'add',
-    'uninstall', 'remove', 'rm',
-    'sync',
-    'update', 'upgrade',
-    'search', 's', 'find',
-    'info', 'show',
-    'preview',
-    'catalog',
-    'curate',
-    'vendor',
-    'check',
-    'doctor',
-    'validate',
-    'init',
-    'init-library',
-    'build-docs',
-    'config',
-    'help',
-    '--help',
-    '-h',
-    'version',
-    '--version',
-    '-v',
-  ]).has(command);
+  return COMMAND_ALIAS_MAP.has(command);
 }
 
 function isImplicitSourceCommand(command) {
@@ -1099,7 +1962,44 @@ function getDirectorySize(dir) {
 
 // ============ CORE COMMANDS ============
 
-function installSkill(skillName, agent = 'claude', dryRun = false, targetPath = null) {
+function buildHouseSkillInstallMeta(skillName, destDir, {
+  sourceContext = getActiveLibraryContext(),
+  skill = null,
+  sourceParsed = null,
+  libraryRepo = null,
+} = {}) {
+  const relativePath = getCatalogSkillRelativePath(skill || { name: skillName });
+
+  if (!sourceParsed) {
+    return buildCatalogInstallMeta(skillName, destDir, sourceContext);
+  }
+
+  if (sourceParsed.type === 'local') {
+    return {
+      sourceType: 'local',
+      source: 'local',
+      path: resolveCatalogSkillSourcePath(skillName, { sourceContext, skill }),
+      skillName,
+      scope: resolveScopeLabel(destDir),
+      ...(libraryRepo ? { libraryRepo } : {}),
+    };
+  }
+
+  return {
+    sourceType: sourceParsed.type,
+    source: sourceParsed.type,
+    url: sourceParsed.type === 'git' ? sanitizeGitUrl(sourceParsed.url) : sourceParsed.url,
+    repo: buildRepoId(sourceParsed),
+    ref: sourceParsed.ref || null,
+    subpath: relativePath,
+    installSource: buildInstallSourceRef(sourceParsed, relativePath),
+    skillName,
+    scope: resolveScopeLabel(destDir),
+    ...(libraryRepo ? { libraryRepo } : {}),
+  };
+}
+
+function installSkill(skillName, agent = 'claude', dryRun = false, targetPath = null, options = {}) {
   try {
     validateSkillName(skillName);
   } catch (e) {
@@ -1107,20 +2007,33 @@ function installSkill(skillName, agent = 'claude', dryRun = false, targetPath = 
     return false;
   }
 
-  const sourcePath = path.join(getActiveSkillsDir(), skillName);
+  const sourceContext = options.sourceContext || getActiveLibraryContext();
+  const skill = options.skill || null;
+  const sourcePath = resolveCatalogSkillSourcePath(skillName, { sourceContext, skill });
 
   if (!fs.existsSync(sourcePath)) {
     // Check if this is a non-vendored cataloged skill
     try {
-      const data = loadSkillsJson();
-      const cataloged = data.skills.find(s => s.name === skillName && s.tier === 'upstream');
-      if (cataloged) {
+      const data = loadCatalogData(sourceContext);
+      const cataloged = data.skills.find(s => s.name === skillName) || null;
+      if (cataloged && shouldTreatCatalogSkillAsHouse(cataloged, sourceContext)) {
+        emitActionableError(
+          `House copy files for "${skillName}" are missing in ${sourceContext.rootDir}`,
+          'Check the `path` in skills.json and commit the vendored files to the shared library.',
+          { code: 'HOUSE_PATH' }
+        );
+        return false;
+      }
+      if (cataloged && cataloged.tier === 'upstream') {
         const installSource = cataloged.installSource || cataloged.source;
         if (installSource) {
           info(`"${skillName}" is a cataloged upstream skill. Installing live from ${installSource}...`);
           const parsed = parseSource(installSource);
           const installPaths = targetPath ? [targetPath] : [AGENT_PATHS[agent] || SCOPES.global];
-          return installFromSource(installSource, parsed, installPaths, [skillName], false, true, dryRun);
+          return installFromSource(installSource, parsed, installPaths, [skillName], false, true, dryRun, {
+            additionalInstallMeta: options.additionalInstallMeta || null,
+            allowWorkspaceCatalog: options.allowWorkspaceCatalog !== false,
+          });
         }
       }
     } catch {}
@@ -1167,7 +2080,12 @@ function installSkill(skillName, agent = 'claude', dryRun = false, targetPath = 
     copyDir(sourcePath, destPath);
 
     // Write metadata for update tracking
-    writeSkillMeta(destPath, buildCatalogInstallMeta(skillName, destDir));
+    writeSkillMeta(destPath, options.metadata || buildHouseSkillInstallMeta(skillName, destDir, {
+      sourceContext,
+      skill,
+      sourceParsed: options.sourceParsed || null,
+      libraryRepo: options.libraryRepo || null,
+    }));
 
     const scopeLabel = resolveScopeLabel(destDir);
     success(`\nInstalled: ${skillName}`);
@@ -1176,7 +2094,7 @@ function installSkill(skillName, agent = 'claude', dryRun = false, targetPath = 
     info(`Size: ${(skillSize / 1024).toFixed(1)} KB`);
 
     log('');
-    if (agent) {
+    if (agent && options.includeAgentInstructions !== false) {
       showAgentInstructions(agent, skillName, destPath);
     }
 
@@ -1188,17 +2106,22 @@ function installSkill(skillName, agent = 'claude', dryRun = false, targetPath = 
 }
 
 // v3: install a catalog skill to a scope path directly (for TUI scope chooser)
-function installSkillToScope(skillName, scopePath, scopeLabel, dryRun = false) {
+function installSkillToScope(skillName, scopePath, scopeLabel, dryRun = false, options = {}) {
   try { validateSkillName(skillName); } catch (e) { error(e.message); return false; }
 
-  const sourcePath = path.join(getActiveSkillsDir(), skillName);
+  const sourceContext = options.sourceContext || getActiveLibraryContext();
+  const skill = options.skill || null;
+  const sourcePath = resolveCatalogSkillSourcePath(skillName, { sourceContext, skill });
   if (!fs.existsSync(sourcePath)) {
     try {
-      const data = loadSkillsJson();
+      const data = loadCatalogData(sourceContext);
       const cataloged = data.skills.find((skill) => skill.name === skillName && skill.tier === 'upstream');
       if (cataloged && cataloged.installSource) {
         const parsed = parseSource(cataloged.installSource);
-        return installFromSource(cataloged.installSource, parsed, [scopePath], [skillName], false, true, dryRun);
+        return installFromSource(cataloged.installSource, parsed, [scopePath], [skillName], false, true, dryRun, {
+          additionalInstallMeta: options.additionalInstallMeta || null,
+          allowWorkspaceCatalog: options.allowWorkspaceCatalog !== false,
+        });
       }
     } catch {}
 
@@ -1225,7 +2148,12 @@ function installSkillToScope(skillName, scopePath, scopeLabel, dryRun = false) {
     if (!fs.existsSync(scopePath)) fs.mkdirSync(scopePath, { recursive: true });
     copyDir(sourcePath, destPath);
     writeSkillMeta(destPath, {
-      ...buildCatalogInstallMeta(skillName, scopePath),
+      ...(options.metadata || buildHouseSkillInstallMeta(skillName, scopePath, {
+        sourceContext,
+        skill,
+        sourceParsed: options.sourceParsed || null,
+        libraryRepo: options.libraryRepo || null,
+      })),
       scope: scopeLabel,
     });
     success(`\nInstalled: ${skillName}`);
@@ -1255,13 +2183,13 @@ function getCollectionSkillsInOrder(data, collection) {
   return orderedSkills;
 }
 
-function buildCollectionInstallOperations(skills) {
+function buildCollectionInstallOperations(skills, { sourceContext = getActiveLibraryContext() } = {}) {
   const operations = [];
 
   for (const skill of skills) {
     if (!skill) continue;
 
-    if (skill.tier !== 'upstream' || !skill.source) {
+    if (shouldTreatCatalogSkillAsHouse(skill, sourceContext)) {
       operations.push({
         type: 'skill',
         skills: [skill],
@@ -1285,10 +2213,55 @@ function buildCollectionInstallOperations(skills) {
   return operations;
 }
 
-function printCatalogInstallPlan(plan, installPaths, {dryRun = false, title = 'Install plan', summaryLine = null} = {}) {
+function printCatalogInstallPlan(plan, installPaths, {
+  dryRun = false,
+  title = 'Install plan',
+  summaryLine = null,
+  sourceContext = getActiveLibraryContext(),
+  sourceParsed = null,
+  parseable = false,
+} = {}) {
   const requestedCount = plan.requested.size;
   const targetList = installPaths.join(', ');
-  const usesSparseCheckout = plan.skills.some((skill) => skill.tier === 'upstream' && (skill.installSource || skill.source) !== skill.source);
+  const usesSparseCheckout = plan.skills.some((skill) => !shouldTreatCatalogSkillAsHouse(skill, sourceContext) && (skill.installSource || skill.source) !== skill.source);
+
+  if (parseable) {
+    if (isJsonOutput()) {
+      emitJsonRecord('install', {
+        kind: 'plan',
+        requested: requestedCount,
+        resolved: plan.skills.length,
+        targets: installPaths,
+      });
+
+      for (const skill of plan.skills) {
+        emitJsonRecord('install', {
+          kind: 'install',
+          skill: {
+            name: skill.name,
+            tier: shouldTreatCatalogSkillAsHouse(skill, sourceContext) ? 'house' : 'upstream',
+            source: getCatalogSkillSourceRef(skill, { sourceContext, sourceParsed }),
+          },
+        });
+      }
+      return;
+    }
+
+    emitMachineLine('PLAN', [
+      `requested=${requestedCount}`,
+      `resolved=${plan.skills.length}`,
+      `targets=${targetList}`,
+    ]);
+
+    for (const skill of plan.skills) {
+      emitMachineLine('INSTALL', [
+        skill.name,
+        shouldTreatCatalogSkillAsHouse(skill, sourceContext) ? 'house' : 'upstream',
+        getCatalogSkillSourceRef(skill, { sourceContext, sourceParsed }),
+      ]);
+    }
+    return;
+  }
 
   if (dryRun) {
     log(`\n${colors.bold}Dry Run${colors.reset} (no changes made)\n`);
@@ -1311,9 +2284,9 @@ function printCatalogInstallPlan(plan, installPaths, {dryRun = false, title = 'I
   }
 
   for (const skill of plan.skills) {
-    const sourceLabel = skill.tier === 'upstream'
-      ? `live from ${skill.installSource || skill.source}`
-      : 'bundled house copy';
+    const sourceLabel = shouldTreatCatalogSkillAsHouse(skill, sourceContext)
+      ? `bundled house copy from ${getCatalogSkillSourceRef(skill, { sourceContext, sourceParsed })}`
+      : `live from ${skill.installSource || skill.source}`;
     const dependencyLabel = plan.requested.has(skill.name)
       ? ''
       : ` ${colors.dim}(dependency)${colors.reset}`;
@@ -1321,28 +2294,55 @@ function printCatalogInstallPlan(plan, installPaths, {dryRun = false, title = 'I
   }
 }
 
-async function installCatalogPlan(plan, installPaths, {dryRun = false, title = 'Installing skills', summaryLine = null, successLine = null} = {}) {
+async function installCatalogPlan(plan, installPaths, {
+  dryRun = false,
+  title = 'Installing skills',
+  summaryLine = null,
+  successLine = null,
+  sourceContext = getActiveLibraryContext(),
+  sourceParsed = null,
+  libraryRepo = null,
+  parseable = false,
+} = {}) {
   if (dryRun) {
-    printCatalogInstallPlan(plan, installPaths, {dryRun: true, title, summaryLine});
+    printCatalogInstallPlan(plan, installPaths, {
+      dryRun: true,
+      title,
+      summaryLine,
+      sourceContext,
+      sourceParsed,
+      parseable,
+    });
     return true;
   }
 
-  printCatalogInstallPlan(plan, installPaths, {dryRun: false, title, summaryLine});
+  printCatalogInstallPlan(plan, installPaths, {
+    dryRun: false,
+    title,
+    summaryLine,
+    sourceContext,
+    sourceParsed,
+  });
 
-  const operations = buildCollectionInstallOperations(plan.skills);
+  const operations = buildCollectionInstallOperations(plan.skills, { sourceContext });
   let completed = 0;
   let failed = 0;
 
   for (const operation of operations) {
     if (operation.type === 'upstream') {
+      const upstreamSource = operation.source;
       const success = await installFromSource(
-        operation.source,
-        parseSource(operation.source),
+        upstreamSource,
+        parseSource(upstreamSource),
         installPaths,
         operation.skills.map((skill) => skill.name),
         false,
         true,
         false,
+        {
+          additionalInstallMeta: libraryRepo ? { libraryRepo } : null,
+          allowWorkspaceCatalog: false,
+        }
       );
 
       if (success) completed += operation.skills.length;
@@ -1353,7 +2353,19 @@ async function installCatalogPlan(plan, installPaths, {dryRun = false, title = '
     for (const skill of operation.skills) {
       let skillSucceeded = true;
       for (const targetPath of installPaths) {
-        if (!installSkill(skill.name, null, false, targetPath)) {
+        if (!installSkill(skill.name, null, false, targetPath, {
+          sourceContext,
+          sourceParsed,
+          skill,
+          libraryRepo,
+          includeAgentInstructions: false,
+          metadata: buildHouseSkillInstallMeta(skill.name, targetPath, {
+            sourceContext,
+            sourceParsed,
+            skill,
+            libraryRepo,
+          }),
+        })) {
           skillSucceeded = false;
         }
       }
@@ -1367,7 +2379,12 @@ async function installCatalogPlan(plan, installPaths, {dryRun = false, title = '
     success(`\n${successLine || `Finished: ${completed} skill${completed === 1 ? '' : 's'} completed`}`);
   }
   if (failed > 0) {
-    warn(`${failed} skill${failed === 1 ? '' : 's'} failed during install`);
+    emitActionableError(
+      `${failed} skill${failed === 1 ? '' : 's'} failed during install`,
+      'Run the source again with --dry-run or --list to inspect the install plan and failing source.',
+      { code: 'INSTALL', machine: parseable }
+    );
+    process.exitCode = 1;
   }
 
   return completed > 0;
@@ -1613,11 +2630,29 @@ function runDoctor(agentsToCheck = Object.keys(AGENT_PATHS)) {
     });
   });
 
-  log(`\n${colors.bold}AI Agent Skills Doctor${colors.reset}`);
-  log(`${colors.dim}Checking the library, config, and install targets.${colors.reset}\n`);
-
   let passed = 0;
   let failed = 0;
+  checks.forEach((check) => {
+    if (check.pass) passed++;
+    else failed++;
+  });
+
+  if (isJsonOutput()) {
+    setJsonResultData({
+      checks,
+      summary: {
+        passed,
+        failed,
+      },
+    });
+    if (failed > 0) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  log(`\n${colors.bold}AI Agent Skills Doctor${colors.reset}`);
+  log(`${colors.dim}Checking the library, config, and install targets.${colors.reset}\n`);
   checks.forEach((check) => {
     const badge = check.pass
       ? `${colors.green}${colors.bold}PASS${colors.reset}`
@@ -1639,6 +2674,21 @@ function runDoctor(agentsToCheck = Object.keys(AGENT_PATHS)) {
 function runValidate(targetPath) {
   const result = validateSkillDirectory(targetPath);
   const label = targetPath ? expandPath(targetPath) : process.cwd();
+
+  if (isJsonOutput()) {
+    setJsonResultData({
+      target: label,
+      ok: result.ok,
+      skillDir: result.skillDir,
+      summary: result.summary,
+      errors: result.errors,
+      warnings: result.warnings,
+    });
+    if (!result.ok) {
+      process.exitCode = 1;
+    }
+    return;
+  }
 
   log(`\n${colors.bold}Validate Skill${colors.reset}`);
   log(`${colors.dim}${label}${colors.reset}\n`);
@@ -1961,6 +3011,182 @@ function updateAllSkillsInPath(destDir, targetLabel = 'global', dryRun = false) 
 
 // ============ LISTING AND SEARCH ============
 
+function resolveCatalogSkillSelection(category = null, tags = null, collectionId = null, workArea = null) {
+  const data = loadSkillsJson();
+  const installStateIndex = buildInstallStateIndex();
+  let skills = data.skills || [];
+
+  if (category) {
+    skills = skills.filter((skill) => skill.category === category.toLowerCase());
+  }
+
+  if (workArea) {
+    skills = skills.filter((skill) => (skill.workArea || '').toLowerCase() === workArea.toLowerCase());
+  }
+
+  if (tags) {
+    const tagList = tags.split(',').map((tag) => tag.trim().toLowerCase());
+    skills = skills.filter((skill) =>
+      skill.tags && tagList.some((tag) => skill.tags.includes(tag))
+    );
+  }
+
+  const collectionResult = filterSkillsByCollection(data, skills, collectionId);
+  skills = collectionResult.skills;
+
+  if (!collectionResult.collection) {
+    skills = sortSkillsByCuration(data, skills);
+  }
+
+  return {
+    data,
+    installStateIndex,
+    collectionResult,
+    skills,
+  };
+}
+
+function emitListJson(category = null, tags = null, collectionId = null, workArea = null, options = {}) {
+  const { data, installStateIndex, collectionResult, skills } = resolveCatalogSkillSelection(category, tags, collectionId, workArea);
+  const fields = parseFieldMask(options.fields, DEFAULT_LIST_JSON_FIELDS);
+
+  if (collectionId && !collectionResult.collection) {
+    process.exitCode = 1;
+    emitJsonEnvelope('list', {
+      filters: { category, tags, collection: collectionId, workArea },
+      fields,
+      limit: options.limit == null ? null : options.limit,
+      offset: options.offset == null ? 0 : options.offset,
+    }, [{
+      code: 'COLLECTION',
+      message: collectionResult.message,
+      hint: collectionResult.unknown ? 'Run `npx ai-agent-skills collections` to inspect valid collection ids.' : null,
+    }], { status: 'error' });
+    return;
+  }
+
+  const serializedSkills = skills.map((skill) =>
+    selectObjectFields(serializeSkillForJson(data, skill, installStateIndex), fields)
+  );
+  const pagination = paginateItems(serializedSkills, options.limit, options.offset);
+
+  emitJsonRecord('list', {
+    kind: 'summary',
+    total: pagination.total,
+    returned: pagination.returned,
+    limit: pagination.limit,
+    offset: pagination.offset,
+    fields,
+    filters: { category, tags, collection: collectionId, workArea },
+    collection: collectionResult.collection
+      ? {
+          id: collectionResult.collection.id,
+          title: collectionResult.collection.title,
+          description: collectionResult.collection.description,
+        }
+      : null,
+  });
+
+  for (const skill of pagination.items) {
+    emitJsonRecord('list', {
+      kind: 'item',
+      skill,
+    });
+  }
+}
+
+function emitSearchJson(query, category = null, collectionId = null, workArea = null, options = {}) {
+  const { data, installStateIndex, collectionResult, skills } = resolveCatalogSkillSelection(category, null, collectionId, workArea);
+  const loweredQuery = query.toLowerCase();
+  const fields = parseFieldMask(options.fields, DEFAULT_LIST_JSON_FIELDS);
+
+  if (collectionId && !collectionResult.collection) {
+    process.exitCode = 1;
+    emitJsonEnvelope('search', {
+      query,
+      filters: { category, collection: collectionId, workArea },
+      fields,
+      limit: options.limit == null ? null : options.limit,
+      offset: options.offset == null ? 0 : options.offset,
+    }, [{
+      code: 'COLLECTION',
+      message: collectionResult.message,
+      hint: collectionResult.unknown ? 'Run `npx ai-agent-skills collections` to inspect valid collection ids.' : null,
+    }], { status: 'error' });
+    return;
+  }
+
+  const matches = skills.filter((skill) =>
+    skill.name.toLowerCase().includes(loweredQuery) ||
+    skill.description.toLowerCase().includes(loweredQuery) ||
+    (skill.workArea && skill.workArea.toLowerCase().includes(loweredQuery)) ||
+    (skill.branch && skill.branch.toLowerCase().includes(loweredQuery)) ||
+    (skill.category && skill.category.toLowerCase().includes(loweredQuery)) ||
+    (skill.tags && skill.tags.some((tag) => tag.toLowerCase().includes(loweredQuery)))
+  );
+
+  const rankedMatches = sortSkillsForSearch(data, matches, query);
+  const suggestions = rankedMatches.length === 0
+    ? (data.skills || [])
+        .map((skill) => ({ name: skill.name, dist: levenshteinDistance(skill.name, query) }))
+        .filter((skill) => skill.dist <= 4)
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, 3)
+        .map((skill) => skill.name)
+    : [];
+  const serializedMatches = rankedMatches.map((skill) =>
+    selectObjectFields(serializeSkillForJson(data, skill, installStateIndex), fields)
+  );
+  const pagination = paginateItems(serializedMatches, options.limit, options.offset);
+
+  emitJsonRecord('search', {
+    kind: 'summary',
+    query,
+    total: pagination.total,
+    returned: pagination.returned,
+    limit: pagination.limit,
+    offset: pagination.offset,
+    fields,
+    filters: { category, collection: collectionId, workArea },
+    suggestions,
+  });
+
+  for (const skill of pagination.items) {
+    emitJsonRecord('search', {
+      kind: 'item',
+      skill,
+    });
+  }
+}
+
+function emitInstalledSkillsJson(targets) {
+  const installStateIndex = buildInstallStateIndex();
+
+  for (const target of targets) {
+    const installed = target.label === 'global' || target.label === 'project'
+      ? getInstalledSkillNames(installStateIndex, target.label)
+      : getInstalledSkillsInPath(target.path);
+
+    emitJsonRecord('list', {
+      kind: 'scope',
+      scope: target.label,
+      path: target.path,
+      total: installed.length,
+    });
+
+    for (const name of installed) {
+      emitJsonRecord('list', {
+        kind: 'item',
+        scope: target.label,
+        skill: {
+          name,
+          installState: 'installed',
+        },
+      });
+    }
+  }
+}
+
 function listSkills(category = null, tags = null, collectionId = null, workArea = null) {
   const data = loadSkillsJson();
   const installStateIndex = buildInstallStateIndex();
@@ -2087,7 +3313,7 @@ function listSkills(category = null, tags = null, collectionId = null, workArea 
         log(`  ${colors.green}${skill.name}${colors.reset}${featured}${verified}${tierBadge}${installStateLabel ? ` ${colorizeInstallStateLabel(installStateLabel)}` : ''}${tagStr}${collectionBadge}`);
         log(`    ${colors.dim}${getSkillMeta(skill, false)}${colors.reset}`);
 
-        const shelfNote = skill.whyHere || skill.description;
+        const shelfNote = sanitizeSkillContent(skill.whyHere || skill.description).content;
         const desc = shelfNote.length > 88
           ? shelfNote.slice(0, 88) + '...'
           : shelfNote;
@@ -2182,9 +3408,10 @@ function searchSkills(query, category = null, collectionId = null, workArea = nu
     log(`${colors.green}${skill.name}${colors.reset} ${colors.dim}[${label}]${colors.reset}${installStateLabel ? ` ${colorizeInstallStateLabel(installStateLabel)}` : ''}${tagStr}${collectionBadge}`);
     log(`  ${colors.dim}${getOrigin(skill)} · ${getTrust(skill)} · ${skill.source}${colors.reset}`);
 
-    const desc = skill.description.length > 75
-      ? skill.description.slice(0, 75) + '...'
-      : skill.description;
+    const safeDescription = sanitizeSkillContent(skill.description).content;
+    const desc = safeDescription.length > 75
+      ? safeDescription.slice(0, 75) + '...'
+      : safeDescription;
     log(`  ${desc}`);
     log('');
   });
@@ -2194,6 +3421,29 @@ function showCollections() {
   const data = loadSkillsJson();
   const installStateIndex = buildInstallStateIndex();
   const collections = getCollections(data);
+
+  if (isJsonOutput()) {
+    emitJsonRecord('collections', {
+      kind: 'summary',
+      total: collections.length,
+    });
+    for (const collection of collections) {
+      const installedCount = collection.skills.filter((skillName) => getInstallState(installStateIndex, skillName).installed).length;
+      emitJsonRecord('collections', {
+        kind: 'item',
+        collection: {
+          id: collection.id,
+          title: collection.title,
+          description: collection.description,
+          skillCount: collection.skills.length,
+          installedCount,
+          startHere: getCollectionStartHere(collection),
+          skills: collection.skills,
+        },
+      });
+    }
+    return;
+  }
 
   if (collections.length === 0) {
     warn('No curated collections found in skills.json');
@@ -2242,22 +3492,67 @@ function showPreview(skillName) {
       const data = loadSkillsJson();
       const cataloged = data.skills.find(s => s.name === skillName && s.tier === 'upstream');
       if (cataloged) {
+        const safeDescription = sanitizeSkillContent(cataloged.description || '');
+        const safeWhyHere = sanitizeSkillContent(cataloged.whyHere || '');
+        const sanitized = safeDescription.sanitized || safeWhyHere.sanitized;
+        if (isJsonOutput()) {
+          setJsonResultData({
+            name: skillName,
+            sourceType: 'upstream',
+            description: safeDescription.content,
+            whyHere: safeWhyHere.content,
+            installSource: cataloged.installSource || cataloged.source,
+            content: null,
+            sanitized,
+          });
+          return;
+        }
         log(`\n${colors.bold}Preview:${colors.reset} ${skillName}\n`);
-        log(cataloged.description);
-        if (cataloged.whyHere) {
-          log(`\n${colors.dim}${cataloged.whyHere}${colors.reset}`);
+        if (sanitized) {
+          warn('Preview content was sanitized to remove suspicious instructions.');
+        }
+        log(safeDescription.content);
+        if (safeWhyHere.content) {
+          log(`\n${colors.dim}${safeWhyHere.content}${colors.reset}`);
         }
         const src = cataloged.installSource || cataloged.source;
         log(`\n${colors.dim}Cataloged upstream skill. Install pulls live from: ${src}${colors.reset}`);
         return;
       }
     } catch {}
+    if (isJsonOutput()) {
+      process.exitCode = 1;
+      emitJsonEnvelope('preview', {
+        name: skillName,
+      }, [{
+        code: 'SKILL',
+        message: `Skill "${skillName}" not found.`,
+        hint: null,
+      }], { status: 'error' });
+      return;
+    }
     error(`Skill "${skillName}" not found.`);
     return;
   }
 
+  const preview = sanitizeSkillContent(fs.readFileSync(skillPath, 'utf8'));
+
+  if (isJsonOutput()) {
+    setJsonResultData({
+      name: skillName,
+      sourceType: 'house',
+      path: skillPath,
+      content: preview.content,
+      sanitized: preview.sanitized,
+    });
+    return;
+  }
+
   log(`\n${colors.bold}Preview:${colors.reset} ${skillName}\n`);
-  log(fs.readFileSync(skillPath, 'utf8'));
+  if (preview.sanitized) {
+    warn('Preview content was sanitized to remove suspicious instructions.');
+  }
+  log(preview.content);
 }
 
 function isInteractiveTerminal() {
@@ -2364,6 +3659,27 @@ function promptLine(rl, label, defaultValue = '') {
     rl.question(`${label}${suffix}: `, (answer) => {
       const value = String(answer || '').trim();
       resolve(value || String(defaultValue || '').trim());
+    });
+  });
+}
+
+function promptConfirm(label, defaultYes = true) {
+  if (!isInteractiveTerminal()) {
+    return Promise.resolve(defaultYes);
+  }
+
+  const rl = createPromptInterface();
+  const suffix = defaultYes ? ' [Y/n]' : ' [y/N]';
+
+  return new Promise((resolve) => {
+    rl.question(`${label}${suffix}: `, (answer) => {
+      rl.close();
+      const normalized = String(answer || '').trim().toLowerCase();
+      if (!normalized) {
+        resolve(defaultYes);
+        return;
+      }
+      resolve(normalized === 'y' || normalized === 'yes');
     });
   });
 }
@@ -2688,6 +4004,24 @@ function buildInstallSourceRef(parsed, relativeDir = null) {
   return null;
 }
 
+function getLibraryRepoProvenance(parsed) {
+  if (!parsed) return null;
+  if (parsed.type === 'github') {
+    return buildRepoId(parsed);
+  }
+  return null;
+}
+
+function getCatalogSkillSourceRef(skill, { sourceContext = getActiveLibraryContext(), sourceParsed = null } = {}) {
+  if (shouldTreatCatalogSkillAsHouse(skill, sourceContext)) {
+    if (sourceParsed) {
+      return buildInstallSourceRef(sourceParsed, getCatalogSkillRelativePath(skill));
+    }
+    return resolveCatalogSkillSourcePath(skill.name, { sourceContext, skill });
+  }
+  return skill.installSource || skill.source || '';
+}
+
 function buildSourceUrl(parsed, relativeDir = null) {
   if (!parsed.url) return '';
   const cleanRelativeDir = relativeDir && relativeDir !== '.' ? relativeDir.replace(/\\/g, '/') : '';
@@ -2841,6 +4175,34 @@ async function catalogSkills(source, options = {}) {
       skillName: target.name,
       sourceLabel: buildRepoId(parsed) || source,
     });
+
+    if (options.dryRun) {
+      const entry = buildUpstreamCatalogEntry({
+        source,
+        parsed,
+        discoveredSkill: target,
+        fields,
+        existingCatalog: data,
+      });
+      const collectionIds = normalizeListInput(fields.collections);
+      emitDryRunResult('catalog', [
+        {
+          type: 'catalog-entry',
+          target: `Catalog ${entry.name} from ${entry.source}`,
+          detail: `${formatWorkAreaTitle(entry.workArea)} / ${entry.branch}`,
+        },
+        ...(collectionIds.length > 0 ? [{
+          type: 'collection-membership',
+          target: `Add ${entry.name} to collections`,
+          detail: collectionIds.join(', '),
+        }] : []),
+      ], {
+        command: 'catalog',
+        entry,
+        collections: collectionIds,
+      });
+      return true;
+    }
 
     const nextData = addUpstreamSkillFromDiscovery({
       source,
@@ -3057,6 +4419,26 @@ async function addBundledSkillToWorkspace(skillName, options = {}) {
     const collectionIds = ensureCollectionIdsExist(fields.collections, workspaceData);
     const entry = buildImportedCatalogEntryFromBundledSkill(bundledSkill, fields);
 
+    if (options.dryRun) {
+      emitDryRunResult('add', [
+        {
+          type: 'catalog-entry',
+          target: `Add ${entry.name} to workspace catalog`,
+          detail: `${formatWorkAreaTitle(entry.workArea)} / ${entry.branch}`,
+        },
+        ...(collectionIds.length > 0 ? [{
+          type: 'collection-membership',
+          target: `Add ${entry.name} to collections`,
+          detail: collectionIds.join(', '),
+        }] : []),
+      ], {
+        command: 'add',
+        entry,
+        collections: collectionIds,
+      });
+      return true;
+    }
+
     commitCatalogData({
       ...workspaceData,
       updated: currentCatalogTimestamp(),
@@ -3126,6 +4508,20 @@ function runCurateCommand(skillName, parsed) {
       process.exitCode = 1;
       return false;
     }
+    if (parsed.dryRun) {
+      emitDryRunResult('curate', [
+        {
+          type: 'remove-skill',
+          target: `Remove ${skillName} from the library`,
+          detail: target.tier === 'house' ? 'Also delete house-copy files from skills/' : 'Catalog metadata only',
+        },
+      ], {
+        command: 'curate',
+        skillName,
+        remove: true,
+      });
+      return true;
+    }
     removeSkillFromCatalog(skillName, context);
     if (target.tier === 'house') {
       const bundledDir = path.join(context.skillsDir, skillName);
@@ -3143,6 +4539,44 @@ function runCurateCommand(skillName, parsed) {
     log('Use flags like --area, --branch, --why, --notes, --tags, --labels, --collection, --remove-from-collection, --trust, --feature, or --remove --yes.');
     process.exitCode = 1;
     return false;
+  }
+
+  if (parsed.dryRun) {
+    const data = loadCatalogData(context);
+    const target = findSkillByName(data, skillName);
+    if (!target) {
+      error(`Skill "${skillName}" not found in catalog.`);
+      process.exitCode = 1;
+      return false;
+    }
+    const next = applyCurateChanges(target, changes, data);
+    const actions = [
+      {
+        type: 'update-skill',
+        target: `Update ${skillName}`,
+        detail: `${formatWorkAreaTitle(next.workArea)} / ${next.branch}`,
+      },
+    ];
+    if (changes.collectionsAdd) {
+      actions.push({
+        type: 'collection-membership',
+        target: `Add ${skillName} to collections`,
+        detail: normalizeListInput(changes.collectionsAdd).join(', '),
+      });
+    }
+    if (changes.collectionsRemove) {
+      actions.push({
+        type: 'collection-removal',
+        target: `Remove ${skillName} from collections`,
+        detail: normalizeListInput(changes.collectionsRemove).join(', '),
+      });
+    }
+    emitDryRunResult('curate', actions, {
+      command: 'curate',
+      skill: next,
+      changes,
+    });
+    return true;
   }
 
   curateSkill(skillName, changes, context);
@@ -3183,12 +4617,182 @@ function copySkillFiles(srcDir, destDir) {
   }
 }
 
+function getSourceLabel(parsed, fallbackSource = '') {
+  if (!parsed) return String(fallbackSource || '');
+  if (parsed.type === 'github') {
+    return buildRepoId(parsed) || String(fallbackSource || '');
+  }
+  if (parsed.type === 'git') {
+    return sanitizeGitUrl(parsed.url);
+  }
+  if (parsed.type === 'local') {
+    return expandPath(parsed.url);
+  }
+  return String(fallbackSource || '');
+}
+
+function printRemoteWorkspaceList(sourceLabel, data, skills) {
+  const entries = Array.isArray(skills) ? skills : [];
+
+  if (isJsonOutput()) {
+    emitJsonRecord('install', {
+      kind: 'summary',
+      source: sourceLabel,
+      total: entries.length,
+    });
+    for (const skill of entries) {
+      emitJsonRecord('install', {
+        kind: 'item',
+        skill: {
+          name: skill.name,
+          tier: skill.tier,
+          workArea: skill.workArea || '',
+          branch: skill.branch || '',
+          whyHere: skill.whyHere || '',
+        },
+      });
+    }
+    return;
+  }
+
+  if (isMachineReadableOutput()) {
+    emitMachineLine('LIBRARY', [sourceLabel, entries.length]);
+    for (const skill of entries) {
+      emitMachineLine('SKILL', [
+        skill.name,
+        skill.tier,
+        skill.workArea || '',
+        skill.branch || '',
+        skill.whyHere || '',
+      ]);
+    }
+    return;
+  }
+
+  log(`\n${colors.bold}${sourceLabel}${colors.reset} (${entries.length} skills)\n`);
+  for (const skill of entries) {
+    log(`  ${colors.green}${skill.name}${colors.reset}\t${colors.dim}${skill.tier}${colors.reset}\t${skill.workArea || ''}\t${skill.whyHere || ''}`);
+  }
+}
+
+async function installFromWorkspaceSource(source, parsed, prepared, installPaths, {
+  skillFilters = [],
+  collectionId = null,
+  listMode = false,
+  yes = false,
+  dryRun = false,
+  noDeps = false,
+} = {}) {
+  const remoteContext = createLibraryContext(prepared.rootDir, 'workspace');
+  const remoteData = loadCatalogData(remoteContext);
+  const sourceLabel = getSourceLabel(parsed, source);
+  const libraryRepo = getLibraryRepoProvenance(parsed);
+  const validationErrors = validateRemoteWorkspaceCatalog(remoteData);
+
+  if (validationErrors.length > 0) {
+    emitActionableError(
+      `Remote library catalog is invalid: ${sourceLabel}`,
+      `Run \`npx ai-agent-skills validate\` inside the shared library and fix: ${validationErrors[0]}`,
+      { code: 'CATALOG' }
+    );
+    process.exitCode = 1;
+    return false;
+  }
+
+  if (collectionId && skillFilters.length > 0) {
+    emitActionableError(
+      'Cannot combine --collection and --skill',
+      'Choose one selection mode and retry.',
+      { code: 'INVALID_FLAGS' }
+    );
+    process.exitCode = 1;
+    return false;
+  }
+
+  let requestedNames;
+  let selectedSkills;
+
+  if (collectionId) {
+    const resolution = resolveCollection(remoteData, collectionId);
+    if (!resolution.collection) {
+      emitActionableError(
+        resolution.message || `Unknown collection "${collectionId}"`,
+        `Run: npx ai-agent-skills install ${source} --list`,
+        { code: 'COLLECTION' }
+      );
+      process.exitCode = 1;
+      return false;
+    }
+    selectedSkills = getCollectionSkillsInOrder(remoteData, resolution.collection);
+    requestedNames = selectedSkills.map((skill) => skill.name);
+  } else if (skillFilters.length > 0) {
+    selectedSkills = [];
+    for (const filter of uniqueSkillFilters(skillFilters)) {
+      const match = findSkillByName(remoteData, filter);
+      if (!match) {
+        emitActionableError(
+          `Skill "${filter}" not found in ${sourceLabel}`,
+          `Run: npx ai-agent-skills install ${source} --list`,
+          { code: 'SKILL' }
+        );
+        process.exitCode = 1;
+        return false;
+      }
+      selectedSkills.push(match);
+    }
+    requestedNames = selectedSkills.map((skill) => skill.name);
+  } else {
+    selectedSkills = remoteData.skills;
+    requestedNames = selectedSkills.map((skill) => skill.name);
+  }
+
+  selectedSkills = selectedSkills.map((skill) => ({
+    ...skill,
+    tier: shouldTreatCatalogSkillAsHouse(skill, remoteContext) ? 'house' : 'upstream',
+  }));
+
+  if (listMode) {
+    printRemoteWorkspaceList(sourceLabel, remoteData, selectedSkills);
+    return true;
+  }
+
+  if (requestedNames.length === 0) {
+    emitActionableError(
+      `No installable skills found in ${sourceLabel}`,
+      'Add skills to the shared library first, then retry.',
+      { code: 'EMPTY' }
+    );
+    process.exitCode = 1;
+    return false;
+  }
+
+  if (!collectionId && skillFilters.length === 0 && requestedNames.length > 1 && !yes && process.stdin.isTTY) {
+    const confirmed = await promptConfirm(`Install all ${requestedNames.length} skills from ${sourceLabel}`, true);
+    if (!confirmed) {
+      warn('Install cancelled.');
+      return false;
+    }
+  }
+
+  const plan = getCatalogInstallPlan(remoteData, requestedNames, noDeps);
+  return installCatalogPlan(plan, installPaths, {
+    dryRun,
+    title: `Installing ${sourceLabel}`,
+    summaryLine: dryRun ? `Would install from ${sourceLabel}` : null,
+    sourceContext: remoteContext,
+    sourceParsed: parsed,
+    libraryRepo,
+    parseable: isMachineReadableOutput(),
+  });
+}
+
 // v3: main source-repo install flow
-async function installFromSource(source, parsed, installPaths, skillFilters, listMode, yes, dryRun) {
+async function installFromSource(source, parsed, installPaths, skillFilters, listMode, yes, dryRun, options = {}) {
   let prepared = null;
 
   try {
-    if (parsed.type !== 'local') {
+    const deferCloneInfo = parsed.type !== 'local' && isMachineReadableOutput() && (listMode || dryRun);
+    if (parsed.type !== 'local' && !deferCloneInfo) {
       info(`Cloning ${source}...`);
     }
 
@@ -3196,6 +4800,22 @@ async function installFromSource(source, parsed, installPaths, skillFilters, lis
       parsed,
       sparseSubpath: parsed.subpath || null,
     });
+
+    const isWorkspaceSource = options.allowWorkspaceCatalog !== false && isManagedWorkspaceRoot(prepared.rootDir);
+    if (deferCloneInfo && !isWorkspaceSource) {
+      info(`Cloning ${source}...`);
+    }
+
+    if (isWorkspaceSource) {
+      return installFromWorkspaceSource(source, parsed, prepared, installPaths, {
+        skillFilters,
+        collectionId: options.collectionId || null,
+        listMode,
+        yes,
+        dryRun,
+        noDeps: options.noDeps || false,
+      });
+    }
 
     const discovered = maybeRenameRootSkill(
       discoverSkills(prepared.rootDir, prepared.repoRoot),
@@ -3304,6 +4924,7 @@ async function installFromSource(source, parsed, installPaths, skillFilters, lis
 
           // Write .skill-meta.json
           writeSkillMeta(destPath, {
+            ...(options.additionalInstallMeta || {}),
             sourceType: parsed.type,
             source: parsed.type,
             url: parsed.type === 'local' ? null : sanitizeGitUrl(parsed.url),
@@ -3333,6 +4954,19 @@ async function installFromSource(source, parsed, installPaths, skillFilters, lis
     }
 
     return successes > 0;
+  } catch (e) {
+    const message = e && e.message ? e.message : String(e);
+    emitActionableError(
+      message,
+      message.toLowerCase().includes('credential') || message.toLowerCase().includes('authentication')
+        ? 'Check your GitHub credentials or repo access.'
+        : 'Retry with --dry-run or --list to inspect the source first.',
+      {
+        code: message.toLowerCase().includes('credential') || message.toLowerCase().includes('authentication') ? 'AUTH' : 'SOURCE',
+      }
+    );
+    process.exitCode = 1;
+    return false;
   } finally {
     if (prepared) {
       prepared.cleanup();
@@ -3393,6 +5027,7 @@ ${colors.bold}Commands:${colors.reset}
   ${colors.green}vendor <source>${colors.reset}       Create a house copy from an explicit source
   ${colors.green}doctor${colors.reset}                Diagnose install issues
   ${colors.green}validate [path]${colors.reset}       Validate a skill directory
+  ${colors.green}describe <command>${colors.reset}     Show machine-readable schema for one command
 
 ${colors.bold}Scopes:${colors.reset}
   ${colors.cyan}(default)${colors.reset}             ~/.claude/skills/        Global, available everywhere
@@ -3421,6 +5056,8 @@ ${colors.bold}Options:${colors.reset}
   ${colors.cyan}--dry-run${colors.reset}             Show what would be installed
   ${colors.cyan}--no-deps${colors.reset}             Skip dependency expansion for catalog installs
   ${colors.cyan}--agent <name>${colors.reset}        Install to a specific agent path (legacy)
+  ${colors.cyan}--format <text|json>${colors.reset}  Select output format
+  ${colors.cyan}help --json${colors.reset}            Emit machine-readable CLI schema
 
 ${colors.bold}Use it from an agent:${colors.reset}
   Any Agent Skills-compatible agent with shell access can run this CLI directly
@@ -3456,22 +5093,35 @@ ${colors.bold}More info:${colors.reset}
 `);
 }
 
-function showInfo(skillName) {
+function showInfo(skillName, options = {}) {
   const data = loadSkillsJson();
   const installStateIndex = buildInstallStateIndex();
   const dependencyGraph = buildDependencyGraph(data);
   const skill = data.skills.find(s => s.name === skillName);
+  const similar = !skill
+    ? data.skills
+        .filter(s => s.name.includes(skillName) || skillName.includes(s.name))
+        .slice(0, 3)
+        .map((candidate) => candidate.name)
+    : [];
 
   if (!skill) {
+    if (isJsonOutput()) {
+      process.exitCode = 1;
+      emitJsonEnvelope('info', {
+        name: skillName,
+        suggestions: similar,
+      }, [{
+        code: 'SKILL',
+        message: `Skill "${skillName}" not found.`,
+        hint: similar.length > 0 ? `Did you mean: ${similar.join(', ')}?` : null,
+      }], { status: 'error' });
+      return;
+    }
+
     error(`Skill "${skillName}" not found.`);
-
-    // Suggest similar
-    const similar = data.skills
-      .filter(s => s.name.includes(skillName) || skillName.includes(s.name))
-      .slice(0, 3);
-
     if (similar.length > 0) {
-      log(`\n${colors.dim}Did you mean: ${similar.map(s => s.name).join(', ')}?${colors.reset}`);
+      log(`\n${colors.dim}Did you mean: ${similar.join(', ')}?${colors.reset}`);
     }
     return;
   }
@@ -3484,8 +5134,12 @@ function showInfo(skillName) {
     .join(', ') || 'none';
   const syncMode = getSyncMode(skill);
   const sourceUrl = skill.sourceUrl || `https://github.com/${skill.source}`;
-  const whyHere = skill.whyHere || 'This skill still earns a place in the library.';
+  const safeDescription = sanitizeSkillContent(skill.description || '');
+  const safeWhyHere = sanitizeSkillContent(skill.whyHere || 'This skill still earns a place in the library.');
+  const safeNotes = sanitizeSkillContent(skill.notes || '');
+  const whyHere = safeWhyHere.content;
   const alsoLookAt = getSiblingRecommendations(data, skill, 3).map(candidate => candidate.name).join(', ') || 'none';
+  const alsoLookAtList = getSiblingRecommendations(data, skill, 3).map(candidate => candidate.name);
   const upstreamInstall = getGitHubInstallSpec(skill, 'cursor');
   const installStateLabel = getInstallStateText(skill.name, installStateIndex) || 'not installed in the standard scopes';
   const dependsOn = dependencyGraph.requiresMap.get(skill.name) || [];
@@ -3497,13 +5151,71 @@ function showInfo(skillName) {
     ? `${colors.bold}Labels:${colors.reset}      ${skill.labels.join(', ')}\n`
     : '';
   const notesLine = skill.notes
-    ? `${colors.bold}Notes:${colors.reset}       ${skill.notes}\n`
+    ? `${colors.bold}Notes:${colors.reset}       ${safeNotes.content}\n`
     : '';
+  const infoFieldMask = parseFieldMask(options.fields);
+
+  if (isJsonOutput()) {
+    const payload = {
+      name: skill.name,
+      description: safeDescription.content,
+      skill: {
+        ...serializeSkillForJson(data, skill, installStateIndex),
+        sourceUrl,
+        syncMode,
+        author: skill.author || null,
+        license: skill.license || null,
+        labels: Array.isArray(skill.labels) ? skill.labels : [],
+        notes: safeNotes.content,
+        lastVerified: skill.lastVerified || null,
+        lastUpdated: skill.lastUpdated || null,
+      },
+      collections: getCollectionsForSkill(data, skill.name).map((collection) => ({
+        id: collection.id,
+        title: collection.title,
+      })),
+      dependencies: {
+        dependsOn,
+        usedBy,
+      },
+      neighboringShelfPicks: alsoLookAtList,
+      installCommands: [
+        `npx ai-agent-skills install ${skill.name}`,
+        `npx ai-agent-skills install ${skill.name} --agent cursor`,
+        `npx ai-agent-skills install ${skill.name} --dry-run`,
+        ...(upstreamInstall ? [upstreamInstall.command] : []),
+      ],
+    };
+
+    if (infoFieldMask && infoFieldMask.length > 0) {
+      const masked = {};
+      const topLevelFieldSet = new Set(['name', 'description', 'collections', 'dependencies', 'neighboringShelfPicks', 'installCommands']);
+      const maskedSkill = selectObjectFields(
+        payload.skill,
+        infoFieldMask.filter((field) => !topLevelFieldSet.has(field))
+      );
+      for (const field of infoFieldMask) {
+        if (field === 'name' || field === 'description') {
+          masked[field] = payload[field];
+        } else if (Object.prototype.hasOwnProperty.call(payload, field) && field !== 'skill') {
+          masked[field] = payload[field];
+        }
+      }
+      if (Object.keys(maskedSkill).length > 0) {
+        masked.skill = maskedSkill;
+      }
+      masked.fields = infoFieldMask;
+      setJsonResultData(masked);
+    } else {
+      setJsonResultData(payload);
+    }
+    return;
+  }
 
   log(`
 ${colors.bold}${skill.name}${colors.reset}${skill.featured ? ` ${colors.yellow}(featured)${colors.reset}` : ''}${skill.verified ? ` ${colors.green}(verified)${colors.reset}` : ''}
 
-${colors.dim}${skill.description}${colors.reset}
+${colors.dim}${safeDescription.content}${colors.reset}
 
 ${colors.bold}Why Here:${colors.reset}
   ${whyHere}
@@ -3538,6 +5250,18 @@ ${upstreamInstall ? `  ${upstreamInstall.command}\n` : ''}`);
 
 function showConfig() {
   const config = loadConfig();
+
+  if (isJsonOutput()) {
+    setJsonResultData({
+      path: CONFIG_FILE,
+      config: {
+        defaultAgent: config.defaultAgent || 'claude',
+        agents: config.agents || null,
+        autoUpdate: config.autoUpdate || false,
+      },
+    });
+    return;
+  }
 
   log(`\n${colors.bold}Configuration${colors.reset}`);
   log(`${colors.dim}File: ${CONFIG_FILE}${colors.reset}\n`);
@@ -3577,6 +5301,15 @@ function setConfig(key, value) {
   }
 
   if (saveConfig(config)) {
+    if (isJsonOutput()) {
+      setJsonResultData({
+        key,
+        value,
+        path: CONFIG_FILE,
+        config,
+      });
+      return true;
+    }
     success(`Config updated: ${key} = ${value}`);
     return true;
   }
@@ -3623,6 +5356,13 @@ Specific failure modes or non-obvious behaviors the agent would hit without this
   }
 
   fs.writeFileSync(skillMdPath, template);
+  if (isJsonOutput()) {
+    setJsonResultData({
+      name: safeName,
+      targetDir,
+      skillMdPath,
+    });
+  }
   success(`Created ${skillMdPath}`);
   log(`\n${colors.dim}Edit the file, then validate:${colors.reset}`);
   log(`  npx ai-agent-skills validate ${name ? name : '.'}`);
@@ -3666,37 +5406,127 @@ Use \`ai-agent-skills\` to keep the catalog, house copies, and generated docs in
 `;
 }
 
-function createStarterLibraryData(libraryName, librarySlug) {
+const DEFAULT_WORKSPACE_WORK_AREAS = [
+  {
+    id: 'frontend',
+    title: 'Frontend',
+    description: 'Interfaces, design systems, browser work, and product polish.',
+  },
+  {
+    id: 'backend',
+    title: 'Backend',
+    description: 'Systems, data, security, and runtime operations.',
+  },
+  {
+    id: 'mobile',
+    title: 'Mobile',
+    description: 'Native apps, React Native, device testing, and mobile delivery.',
+  },
+  {
+    id: 'workflow',
+    title: 'Workflow',
+    description: 'Files, docs, planning, and release work.',
+  },
+  {
+    id: 'agent-engineering',
+    title: 'Agent Engineering',
+    description: 'Prompts, tools, evaluation, orchestration, and agent runtime design.',
+  },
+];
+
+function normalizeWorkspaceWorkAreas(workAreas) {
+  if (workAreas === undefined) {
+    return DEFAULT_WORKSPACE_WORK_AREAS.map((area) => ({ ...area }));
+  }
+
+  if (!Array.isArray(workAreas) || workAreas.length === 0) {
+    throw new Error('init-library JSON payload requires workAreas to be a non-empty array when provided.');
+  }
+
+  return workAreas.map((area) => {
+    if (typeof area === 'string') {
+      const id = String(area).trim();
+      if (!id) {
+        throw new Error('workAreas entries must not be blank.');
+      }
+      const existing = DEFAULT_WORKSPACE_WORK_AREAS.find((candidate) => candidate.id === id);
+      return existing ? { ...existing } : { id, title: formatWorkAreaTitle(id), description: '' };
+    }
+
+    if (!area || typeof area !== 'object' || Array.isArray(area)) {
+      throw new Error('workAreas entries must be strings or objects.');
+    }
+
+    const id = String(area.id || '').trim();
+    if (!id) {
+      throw new Error('Each workAreas object must include an id.');
+    }
+
+    const existing = DEFAULT_WORKSPACE_WORK_AREAS.find((candidate) => candidate.id === id);
+    return {
+      id,
+      title: String(area.title || existing?.title || formatWorkAreaTitle(id)).trim(),
+      description: String(area.description || existing?.description || '').trim(),
+    };
+  });
+}
+
+function normalizeStarterCollections(collections) {
+  if (collections === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(collections)) {
+    throw new Error('init-library JSON payload requires collections to be an array when provided.');
+  }
+
+  return collections.map((collection) => {
+    if (typeof collection === 'string') {
+      const id = String(collection).trim();
+      if (!id) {
+        throw new Error('collections entries must not be blank.');
+      }
+      return {
+        id,
+        title: formatWorkAreaTitle(id),
+        description: '',
+        skills: [],
+      };
+    }
+
+    if (!collection || typeof collection !== 'object' || Array.isArray(collection)) {
+      throw new Error('collections entries must be strings or objects.');
+    }
+
+    const id = String(collection.id || '').trim();
+    if (!id) {
+      throw new Error('Each collections object must include an id.');
+    }
+
+    return {
+      id,
+      title: String(collection.title || formatWorkAreaTitle(id)).trim(),
+      description: String(collection.description || '').trim(),
+      skills: Array.isArray(collection.skills) ? collection.skills : [],
+    };
+  });
+}
+
+function createStarterLibraryData(libraryName, librarySlug, options = {}) {
   const pkg = require('./package.json');
   return {
     version: pkg.version,
     updated: currentCatalogTimestamp(),
     total: 0,
-    workAreas: [
-      {
-        id: 'frontend',
-        title: 'Frontend',
-        description: 'Interfaces, design systems, browser work, and product polish.',
-      },
-      {
-        id: 'backend',
-        title: 'Backend',
-        description: 'Systems, data, security, and runtime operations.',
-      },
-      {
-        id: 'workflow',
-        title: 'Workflow',
-        description: 'Files, docs, planning, and release work.',
-      },
-    ],
-    collections: [],
+    workAreas: normalizeWorkspaceWorkAreas(options.workAreas),
+    collections: normalizeStarterCollections(options.collections),
     skills: [],
     libraryName,
     librarySlug,
   };
 }
 
-function initLibrary(name) {
+function initLibrary(name, options = {}) {
   const libraryName = String(name || '').trim();
   if (!libraryName) {
     error('Please provide a workspace name.');
@@ -3731,12 +5561,40 @@ function initLibrary(name) {
   }
 
   const workspaceContext = createLibraryContext(targetDir, 'workspace');
-  const starterData = createStarterLibraryData(libraryName, librarySlug);
+  const starterData = createStarterLibraryData(libraryName, librarySlug, options);
   const workspaceConfig = {
     libraryName,
     librarySlug,
     mode: 'workspace',
   };
+
+  if (options.dryRun) {
+    emitDryRunResult('init-library', [
+      {
+        type: 'create-workspace',
+        target: `Create workspace ${librarySlug}`,
+        detail: targetDir,
+      },
+      {
+        type: 'seed-work-areas',
+        target: 'Seed work areas',
+        detail: starterData.workAreas.map((area) => area.id).join(', '),
+      },
+      {
+        type: 'seed-collections',
+        target: 'Seed collections',
+        detail: starterData.collections.length > 0 ? starterData.collections.map((collection) => collection.id).join(', ') : 'none',
+      },
+    ], {
+      command: 'init-library',
+      libraryName,
+      librarySlug,
+      targetDir,
+      workAreas: starterData.workAreas.map((area) => area.id),
+      collections: starterData.collections.map((collection) => collection.id),
+    });
+    return true;
+  }
 
   fs.mkdirSync(workspaceContext.workspaceDir, { recursive: true });
   fs.mkdirSync(workspaceContext.skillsDir, { recursive: true });
@@ -3746,13 +5604,33 @@ function initLibrary(name) {
   fs.writeFileSync(workspaceContext.skillsJsonPath, `${JSON.stringify(starterData, null, 2)}\n`);
   writeGeneratedDocs(starterData, workspaceContext);
 
+  if (isJsonOutput()) {
+    setJsonResultData({
+      libraryName,
+      librarySlug,
+      targetDir,
+      files: {
+        config: workspaceContext.workspaceConfigPath,
+        readme: workspaceContext.readmePath,
+        skillsJson: workspaceContext.skillsJsonPath,
+        workAreas: workspaceContext.workAreasPath,
+      },
+      workAreas: starterData.workAreas.map((area) => area.id),
+    });
+  }
   success(`Created library workspace: ${libraryName}`);
   info(`Path: ${targetDir}`);
   log(`\n${colors.dim}Next steps:${colors.reset}`);
   log(`  cd ${librarySlug}`);
-  log(`  npx ai-agent-skills add frontend-design --area frontend --branch Implementation --why "I want this on my shelf."`);
-  log(`  npx ai-agent-skills list`);
+  log(`  npx ai-agent-skills list --area frontend`);
+  log(`  npx ai-agent-skills search react-native`);
+  log(`  npx ai-agent-skills add frontend-design --area frontend --branch Implementation --why "Anchors the frontend shelf with stronger UI craft and production-ready interface direction."`);
   log(`  npx ai-agent-skills build-docs`);
+  log(`  git init`);
+  log(`  git add .`);
+  log(`  git commit -m "Initialize skills library"`);
+  log(`  gh repo create <owner>/${librarySlug} --public --source=. --remote=origin --push`);
+  log(`  npx ai-agent-skills install <owner>/${librarySlug} --collection starter-pack -p`);
   return true;
 }
 
@@ -3763,6 +5641,12 @@ function buildDocs() {
   try {
     const data = loadCatalogData(context);
     writeGeneratedDocs(data, context);
+    if (isJsonOutput()) {
+      setJsonResultData({
+        readmePath: context.readmePath,
+        workAreasPath: context.workAreasPath,
+      });
+    }
     success('Regenerated workspace docs');
     info(`README: ${context.readmePath}`);
     info(`Work areas: ${context.workAreasPath}`);
@@ -3776,10 +5660,10 @@ function buildDocs() {
 
 // ============ CHECK COMMAND ============
 
-function checkSkills(scope) {
+function collectCheckResults(scope) {
   const { execFileSync } = require('child_process');
-
   const targets = [];
+
   if (!scope || scope === 'global') {
     targets.push({ label: 'global', path: SCOPES.global });
   }
@@ -3787,8 +5671,7 @@ function checkSkills(scope) {
     targets.push({ label: 'project', path: SCOPES.project });
   }
 
-  log(`\n${colors.bold}Checking installed skills...${colors.reset}\n`);
-
+  const results = [];
   let updatesAvailable = 0;
   let checked = 0;
 
@@ -3806,11 +5689,16 @@ function checkSkills(scope) {
         const meta = readSkillMeta(skillDir);
 
         if (!meta) {
-          log(`  ${colors.dim}?${colors.reset} ${entry.name}${colors.dim}      no source metadata (manually installed)${colors.reset}`);
+          results.push({
+            scope: target.label,
+            name: entry.name,
+            status: 'unknown',
+            detail: 'no source metadata (manually installed)',
+            meta: null,
+          });
           continue;
         }
 
-        // For GitHub sources, try to check if updates exist
         const sourceType = meta.sourceType || meta.source;
 
         if (sourceType === 'github' && (meta.repo || meta.url)) {
@@ -3821,32 +5709,91 @@ function checkSkills(scope) {
               timeout: 10000,
               env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
             });
-            // If we get here, remote is reachable. We can't cheaply diff without the original SHA,
-            // so just report as potentially up to date
-            log(`  ${colors.green}\u2713${colors.reset} ${entry.name}${colors.dim}      up to date${colors.reset}`);
+            results.push({
+              scope: target.label,
+              name: entry.name,
+              status: 'ok',
+              detail: 'up to date',
+              meta,
+            });
           } catch {
-            log(`  ${colors.yellow}\u2191${colors.reset} ${entry.name}${colors.dim}      update may be available (${meta.repo || meta.url})${colors.reset}`);
             updatesAvailable++;
+            results.push({
+              scope: target.label,
+              name: entry.name,
+              status: 'warning',
+              detail: `update may be available (${meta.repo || meta.url})`,
+              meta,
+            });
           }
         } else if (sourceType === 'catalog' || sourceType === 'registry') {
           const catalogContext = getCatalogContextFromMeta(meta);
           if (!catalogContext) {
-            log(`  ${colors.dim}?${colors.reset} ${entry.name}${colors.dim}      workspace source unavailable (run from inside the workspace or reinstall)${colors.reset}`);
+            results.push({
+              scope: target.label,
+              name: entry.name,
+              status: 'unknown',
+              detail: 'workspace source unavailable (run from inside the workspace or reinstall)',
+              meta,
+            });
             continue;
           }
           const catalogPath = path.join(catalogContext.skillsDir, entry.name);
-          if (fs.existsSync(catalogPath)) {
-            log(`  ${colors.green}\u2713${colors.reset} ${entry.name}${colors.dim}      up to date${colors.reset}`);
-          } else {
-            log(`  ${colors.dim}?${colors.reset} ${entry.name}${colors.dim}      not in current catalog${colors.reset}`);
-          }
+          results.push({
+            scope: target.label,
+            name: entry.name,
+            status: fs.existsSync(catalogPath) ? 'ok' : 'unknown',
+            detail: fs.existsSync(catalogPath) ? 'up to date' : 'not in current catalog',
+            meta,
+          });
         } else {
-          log(`  ${colors.green}\u2713${colors.reset} ${entry.name}${colors.dim}      ${sourceType}${colors.reset}`);
+          results.push({
+            scope: target.label,
+            name: entry.name,
+            status: 'ok',
+            detail: sourceType,
+            meta,
+          });
         }
       }
-    } catch (e) {
-      // skip unreadable dirs
+    } catch {
+      continue;
     }
+  }
+
+  return { targets, checked, updatesAvailable, results };
+}
+
+function checkSkills(scope) {
+  const { checked, updatesAvailable, results } = collectCheckResults(scope);
+
+  if (isJsonOutput()) {
+    setJsonResultData({
+      checked,
+      updatesAvailable,
+      results: results.map((entry) => ({
+        scope: entry.scope,
+        name: entry.name,
+        status: entry.status,
+        detail: entry.detail,
+        sourceType: entry.meta ? (entry.meta.sourceType || entry.meta.source || null) : null,
+      })),
+    });
+    return;
+  }
+
+  log(`\n${colors.bold}Checking installed skills...${colors.reset}\n`);
+
+  for (const entry of results) {
+    if (entry.status === 'warning') {
+      log(`  ${colors.yellow}\u2191${colors.reset} ${entry.name}${colors.dim}      ${entry.detail}${colors.reset}`);
+      continue;
+    }
+    if (entry.status === 'unknown') {
+      log(`  ${colors.dim}?${colors.reset} ${entry.name}${colors.dim}      ${entry.detail}${colors.reset}`);
+      continue;
+    }
+    log(`  ${colors.green}\u2713${colors.reset} ${entry.name}${colors.dim}      ${entry.detail}${colors.reset}`);
   }
 
   if (checked === 0) {
@@ -3869,9 +5816,12 @@ async function main() {
   const args = process.argv.slice(2);
   setActiveLibraryContext(resolveLibraryContext(process.cwd()));
   const parsed = parseArgs(args);
+  resetOutputState(resolveOutputFormat(parsed), resolveCommandAlias(parsed.command || 'help'), parsed.format != null);
   const {
     command,
     param,
+    format,
+    json,
     agents,
     explicitAgent,
     installed,
@@ -3899,75 +5849,112 @@ async function main() {
   } = parsed;
   const managedTargets = resolveManagedTargets(parsed);
 
-  if (!command) {
-    if (!isInteractiveTerminal()) {
-      showHelp();
-      return;
-    }
-
-    const tuiAgent = explicitAgent ? agents[0] : null;
-    const tuiScope = scope || 'global';
-    const action = await launchBrowser({agent: tuiAgent, scope: tuiScope});
-    if (action && action.type === 'install') {
-      if (action.agent) {
-        await installCatalogSkillFromLibrary(action.skillName, [AGENT_PATHS[action.agent] || SCOPES.global], false);
-      } else {
-        const scopePath = SCOPES[action.scope || 'global'];
-        await installCatalogSkillFromLibrary(action.skillName, [scopePath], false);
-      }
-    } else if (action && action.type === 'github-install') {
-      await installFromGitHub(action.source, agents[0], false);
-    } else if (action && action.type === 'skills-install') {
-      runExternalInstallAction(action);
-    }
-    return;
-  }
-
-  if (command === SWIFT_SHORTCUT) {
-    const previousContext = getActiveLibraryContext();
-    setActiveLibraryContext(getBundledLibraryContext());
-    try {
-      if (listMode) {
-        listSkills(category, tags, 'swift-agent-skills', workArea);
+  try {
+    if (!command) {
+      if (!isInteractiveTerminal()) {
+        showHelp();
         return;
       }
 
-      const swiftInstallPaths = resolveInstallPath(parsed, { defaultAgents: UNIVERSAL_DEFAULT_AGENTS });
-      await installCollection('swift-agent-skills', parsed, swiftInstallPaths);
-    } finally {
-      setActiveLibraryContext(previousContext);
+      const tuiAgent = explicitAgent ? agents[0] : null;
+      const tuiScope = scope || 'global';
+      const action = await launchBrowser({agent: tuiAgent, scope: tuiScope});
+      if (action && action.type === 'install') {
+        if (action.agent) {
+          await installCatalogSkillFromLibrary(action.skillName, [AGENT_PATHS[action.agent] || SCOPES.global], false);
+        } else {
+          const scopePath = SCOPES[action.scope || 'global'];
+          await installCatalogSkillFromLibrary(action.skillName, [scopePath], false);
+        }
+      } else if (action && action.type === 'github-install') {
+        await installFromGitHub(action.source, agents[0], false);
+      } else if (action && action.type === 'skills-install') {
+        runExternalInstallAction(action);
+      }
+      return;
     }
-    return;
-  }
 
-  if (!isKnownCommand(command) && isImplicitSourceCommand(command)) {
-    const source = parseSource(command);
-    const installPaths = resolveInstallPath(parsed, { defaultAgents: UNIVERSAL_DEFAULT_AGENTS });
-    await installFromSource(command, source, installPaths, skillFilters, listMode, yes, dryRun);
-    return;
-  }
+    if (command === SWIFT_SHORTCUT) {
+      const previousContext = getActiveLibraryContext();
+      setActiveLibraryContext(getBundledLibraryContext());
+      try {
+        if (listMode) {
+          listSkills(category, tags, 'swift-agent-skills', workArea);
+          return;
+        }
 
-  // Handle config commands specially
-  if (command === 'config') {
-    const configArgs = args.slice(1);
-    if (configArgs.length === 0) {
-      showConfig();
-    } else {
-      for (let i = 0; i < configArgs.length; i++) {
-        if (configArgs[i].startsWith('--')) {
-          const key = configArgs[i].replace('--', '');
-          const value = configArgs[i + 1];
-          if (value) {
-            setConfig(key, value);
-            i++;
+        const swiftInstallPaths = resolveInstallPath(parsed, { defaultAgents: UNIVERSAL_DEFAULT_AGENTS });
+        await installCollection('swift-agent-skills', parsed, swiftInstallPaths);
+      } finally {
+        setActiveLibraryContext(previousContext);
+      }
+      return;
+    }
+
+    if (!isKnownCommand(command)) {
+      try {
+        validateAgentValue(command, 'source', 'identifier');
+      } catch (error) {
+        emitActionableError(error.message, AGENT_INPUT_HINT, { code: 'INVALID_INPUT' });
+        process.exitCode = 1;
+        return;
+      }
+    }
+
+    if (!isKnownCommand(command) && isImplicitSourceCommand(command)) {
+      const source = parseSource(command);
+      const installPaths = resolveInstallPath(parsed, { defaultAgents: UNIVERSAL_DEFAULT_AGENTS });
+      await installFromSource(command, source, installPaths, skillFilters, listMode, yes, dryRun, {
+        collectionId: collection || null,
+        noDeps,
+      });
+      return;
+    }
+
+    // Handle config commands specially
+    if (command === 'config') {
+      const configArgs = [];
+      for (let i = 1; i < args.length; i++) {
+        if (args[i] === '--format') {
+          i++;
+          continue;
+        }
+        if (args[i] === '--json') {
+          continue;
+        }
+        configArgs.push(args[i]);
+      }
+      if (configArgs.length === 0) {
+        showConfig();
+      } else {
+        for (let i = 0; i < configArgs.length; i++) {
+          if (configArgs[i].startsWith('--')) {
+            const key = configArgs[i].replace('--', '');
+            const value = configArgs[i + 1];
+            if (value) {
+              setConfig(key, value);
+              i++;
+            }
           }
         }
       }
+      return;
     }
-    return;
-  }
 
-  switch (command) {
+    const mutationPayload = await parseJsonInput(command, parsed);
+    if (mutationPayload === INVALID_JSON_INPUT) {
+      return;
+    }
+
+    try {
+      validateParsedAgentInputs(command, parsed, mutationPayload || null);
+    } catch (error) {
+      emitActionableError(error.message, AGENT_INPUT_HINT, { code: 'INVALID_INPUT' });
+      process.exitCode = 1;
+      return;
+    }
+
+    switch (command) {
     case 'browse':
     case 'b': {
       if (!isInteractiveTerminal()) {
@@ -3998,10 +5985,18 @@ async function main() {
     case 'list':
     case 'ls':
       if (installed) {
-        for (let i = 0; i < managedTargets.length; i++) {
-          if (i > 0) log('');
-          listInstalledSkillsInPath(managedTargets[i].path, managedTargets[i].label);
+        if (isJsonOutput()) {
+          emitInstalledSkillsJson(managedTargets);
+        } else {
+          for (let i = 0; i < managedTargets.length; i++) {
+            if (i > 0) log('');
+            listInstalledSkillsInPath(managedTargets[i].path, managedTargets[i].label);
+          }
         }
+      } else if (isJsonOutput()) {
+        const readOptions = resolveReadJsonOptions(parsed, 'list');
+        if (!readOptions) return;
+        emitListJson(category, tags, collection, workArea, readOptions);
       } else {
         listSkills(category, tags, collection, workArea);
       }
@@ -4017,16 +6012,27 @@ async function main() {
         error('Please specify a skill name, collection, GitHub repo, or local path.');
         log('Usage: npx ai-agent-skills install <source> [-p]');
         log('       npx ai-agent-skills install --collection <id> [-p]');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       const installPaths = resolveInstallPath(parsed);
 
-      if (collection) {
+      if (collection && !param) {
         await installCollection(collection, parsed, installPaths);
         return;
       }
 
       const source = parseSource(param);
+
+      if (collection && source.type === 'catalog') {
+        emitActionableError(
+          'Cannot combine --collection with a local catalog skill name.',
+          'Use either `install --collection <id>` for the active library, or `install <source> --collection <id>` for a shared library source.',
+          { code: 'INVALID_FLAGS' }
+        );
+        process.exitCode = 1;
+        return;
+      }
 
       if (source.type === 'catalog') {
         const data = loadSkillsJson();
@@ -4045,54 +6051,45 @@ async function main() {
         });
       } else {
         // Source-repo install (v3 flow)
-        await installFromSource(param, source, installPaths, skillFilters, listMode, yes, dryRun);
+        await installFromSource(param, source, installPaths, skillFilters, listMode, yes, dryRun, {
+          collectionId: collection || null,
+          noDeps,
+        });
       }
       return;
     }
 
     case 'add': {
-      if (!param) {
+      const addSource = resolveMutationSource(param, mutationPayload, { allowNameFallback: true });
+      if (!addSource) {
         error('Please specify a bundled skill name, GitHub repo, git URL, or local path.');
         log('Usage: npx ai-agent-skills add <source>');
         log('       npx ai-agent-skills add <catalog-skill-name> --area <shelf> --branch <branch> --why "Why it belongs."');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
 
-      await addSkillToWorkspace(param, {
-        list: listMode,
-        skillFilter: skillFilters.length > 0 ? skillFilters[0] : null,
-        area: workArea,
-        branch,
-        category,
-        tags,
-        labels,
-        notes,
-        trust,
-        whyHere: why,
-        description,
-        collections: collection,
-        lastVerified,
-        featured,
-        clearVerified,
-        remove,
-        ref: getArgValue(process.argv, '--ref'),
-        dryRun,
-      });
+      await addSkillToWorkspace(addSource, buildWorkspaceMutationOptions(parsed, mutationPayload || {}));
       return;
     }
 
     case 'uninstall':
     case 'remove':
     case 'rm':
-      if (!param) {
+      {
+      const uninstallName = param || getPayloadValue(mutationPayload || {}, 'name');
+      const uninstallDryRun = mergeMutationBoolean(parsed.dryRun, mutationPayload || {}, 'dryRun');
+      if (!uninstallName) {
         error('Please specify a skill name.');
         log('Usage: npx ai-agent-skills uninstall <name> [--agents claude,cursor]');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       for (const target of managedTargets) {
-        uninstallSkillFromPath(param, target.path, target.label, dryRun);
+        uninstallSkillFromPath(uninstallName, target.path, target.label, uninstallDryRun);
       }
       return;
+      }
 
     case 'sync':
     case 'update':
@@ -4105,7 +6102,8 @@ async function main() {
         error('Please specify a skill name or use --all.');
         log('Usage: npx ai-agent-skills sync <name> [--agents claude,cursor]');
         log('       npx ai-agent-skills sync --all [--agents claude,cursor]');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       } else {
         for (const target of managedTargets) {
           updateSkillInPath(param, target.path, target.label, dryRun);
@@ -4119,9 +6117,16 @@ async function main() {
       if (!param) {
         error('Please specify a search query.');
         log('Usage: npx ai-agent-skills search <query>');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
-      searchSkills(param, category, collection, workArea);
+      if (isJsonOutput()) {
+        const readOptions = resolveReadJsonOptions(parsed, 'search');
+        if (!readOptions) return;
+        emitSearchJson(param, category, collection, workArea, readOptions);
+      } else {
+        searchSkills(param, category, collection, workArea);
+      }
       return;
 
     case 'info':
@@ -4129,22 +6134,25 @@ async function main() {
       if (!param) {
         error('Please specify a skill name.');
         log('Usage: npx ai-agent-skills info <skill-name>');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
-      showInfo(param);
+      showInfo(param, { fields: parsed.fields });
       return;
 
     case 'preview':
       if (!param) {
         error('Please specify a skill name.');
         log('Usage: npx ai-agent-skills preview <skill-name>');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       showPreview(param);
       return;
 
     case 'catalog': {
-      if (!param) {
+      const catalogSource = resolveMutationSource(param, mutationPayload);
+      if (!catalogSource) {
         error('Provide a source: npx ai-agent-skills catalog owner/repo');
         log(`\n${colors.dim}Examples:${colors.reset}`);
         log(`  npx ai-agent-skills catalog openai/skills --list`);
@@ -4152,56 +6160,29 @@ async function main() {
         log(`  npx ai-agent-skills catalog shadcn-ui/ui --skill shadcn --area frontend --branch Components --why "Strong component patterns I actually reach for."`);
         return;
       }
-      await catalogSkills(param, {
-        list: listMode,
-        skillFilter: skillFilters.length > 0 ? skillFilters[0] : null,
-        area: workArea,
-        branch,
-        category,
-        tags,
-        labels,
-        notes,
-        trust,
-        whyHere: why,
-        description,
-        collections: collection,
-      });
+      await catalogSkills(catalogSource, buildWorkspaceMutationOptions(parsed, mutationPayload || {}));
       return;
     }
 
-    case 'curate':
-      runCurateCommand(param, parsed);
+    case 'curate': {
+      const curateTarget = param || getPayloadValue(mutationPayload || {}, 'name');
+      runCurateCommand(curateTarget, buildCurateParsed(parsed, mutationPayload || {}));
       return;
+    }
 
     case 'vendor':
-      if (!param) {
+      {
+      const vendorSource = resolveMutationSource(param, mutationPayload);
+      if (!vendorSource) {
         error('Provide a source: npx ai-agent-skills vendor <repo-or-path>');
         log(`\n${colors.dim}Examples:${colors.reset}`);
         log(`  npx ai-agent-skills vendor ~/repo --skill my-skill --area frontend --branch React --why "I want a maintained house copy."`);
         log(`  npx ai-agent-skills vendor openai/skills --list`);
         return;
       }
-      await vendorSkill(param, {
-        list: listMode,
-        skillFilter: skillFilters.length > 0 ? skillFilters[0] : null,
-        area: workArea,
-        branch,
-        category,
-        tags,
-        labels,
-        notes,
-        trust,
-        whyHere: why,
-        description,
-        collections: collection,
-        lastVerified,
-        featured,
-        clearVerified,
-        remove,
-        ref: getArgValue(process.argv, '--ref'),
-        dryRun,
-      });
+      await vendorSkill(vendorSource, buildWorkspaceMutationOptions(parsed, mutationPayload || {}));
       return;
+      }
 
     case 'doctor': {
       const doctorAgents = explicitAgent ? agents : Object.keys(AGENT_PATHS);
@@ -4218,7 +6199,11 @@ async function main() {
       return;
 
     case 'init-library':
-      initLibrary(param);
+      initLibrary(param || getPayloadValue(mutationPayload || {}, 'name'), {
+        workAreas: getPayloadValue(mutationPayload || {}, 'workAreas'),
+        collections: getPayloadValue(mutationPayload || {}, 'collections'),
+        dryRun: mergeMutationBoolean(parsed.dryRun, mutationPayload || {}, 'dryRun'),
+      });
       return;
 
     case 'build-docs':
@@ -4232,13 +6217,41 @@ async function main() {
     case 'help':
     case '--help':
     case '-h':
+      if (json || format === 'json') {
+        if (param && !getCommandDefinition(param)) {
+          error(`Unknown command: ${param}`);
+          process.exitCode = 1;
+          return;
+        }
+        emitSchemaHelp(param || null);
+        return;
+      }
       showHelp();
+      return;
+
+    case 'describe':
+      if (!param) {
+        error('Please specify a command name.');
+        log('Usage: npx ai-agent-skills describe <command>');
+        process.exitCode = 1;
+        return;
+      }
+      if (!getCommandDefinition(param)) {
+        error(`Unknown command: ${param}`);
+        process.exitCode = 1;
+        return;
+      }
+      emitSchemaHelp(param);
       return;
 
     case 'version':
     case '--version':
     case '-v': {
       const pkg = require('./package.json');
+      if (isJsonOutput()) {
+        setJsonResultData({ version: pkg.version });
+        return;
+      }
       log(`ai-agent-skills v${pkg.version}`);
       return;
     }
@@ -4254,11 +6267,16 @@ async function main() {
 
       error(`Unknown command: ${command}`);
       showHelp();
-      process.exit(1);
+      process.exitCode = 1;
+      return;
+    }
+  } finally {
+    finalizeJsonOutput();
   }
 }
 
 main().catch((e) => {
   error(e && e.message ? e.message : String(e));
+  finalizeJsonOutput();
   process.exit(1);
 });

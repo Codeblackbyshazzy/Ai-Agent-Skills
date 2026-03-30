@@ -48,18 +48,19 @@ House copies stay flat under `skills/<name>/`. The catalog holds the real struct
 
 ## Workflow
 
-10 skills. Files, docs, planning, release work, and research-to-output flows.
+11 skills. Files, docs, planning, release work, and research-to-output flows.
 
 | Branch | Skills | Source |
 | --- | --- | --- |
 | Files & Docs | `pdf`, `xlsx`, `docx`, `pptx`, `doc-coauthoring`, `code-documentation` | anthropics, wshobson |
 | Planning | `linear`, `notion-spec-to-implementation` | openai |
 | Release | `changelog-generator` | composio |
+| Release & Sharing | `share-a-library` | MoizIbnYousaf |
 | Research & Writing | `content-research-writer` | composio |
 
 ## Agent Engineering
 
-6 skills. MCP, skill-building, prompting discipline, and LLM application work.
+8 skills. MCP, skill-building, prompting discipline, and LLM application work.
 
 | Branch | Skills | Source |
 | --- | --- | --- |
@@ -68,4 +69,5 @@ House copies stay flat under `skills/<name>/`. The catalog holds the real struct
 | MCP | `mcp-builder` | anthropics |
 | Prompting | `best-practices` | MoizIbnYousaf |
 | Provider Docs | `openai-docs` | openai |
+| Shared Libraries | `install-from-remote-library`, `curate-a-team-library` | MoizIbnYousaf |
 | Skill Authoring | `skill-creator` | anthropics |

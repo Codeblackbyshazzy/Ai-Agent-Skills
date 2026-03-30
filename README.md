@@ -13,10 +13,10 @@
   <a href="https://github.com/MoizIbnYousaf/Ai-Agent-Skills"><img alt="GitHub stars" src="https://img.shields.io/github/stars/MoizIbnYousaf/Ai-Agent-Skills?style=for-the-badge&label=stars&labelColor=313244&color=89b4fa&logo=github&logoColor=cdd6f4" /></a>
   <a href="https://www.npmjs.com/package/ai-agent-skills"><img alt="npm version" src="https://img.shields.io/npm/v/ai-agent-skills?style=for-the-badge&label=version&labelColor=313244&color=b4befe&logo=npm&logoColor=cdd6f4" /></a>
   <a href="https://www.npmjs.com/package/ai-agent-skills"><img alt="npm total downloads" src="https://img.shields.io/npm/dt/ai-agent-skills?style=for-the-badge&label=downloads&labelColor=313244&color=f5e0dc&logo=npm&logoColor=cdd6f4" /></a>
-  <a href="https://github.com/MoizIbnYousaf/Ai-Agent-Skills#shelves"><img alt="Library structure" src="https://img.shields.io/badge/library-55%20skills%20%C2%B7%205%20shelves-cba6f7?style=for-the-badge&labelColor=313244&logo=bookstack&logoColor=cdd6f4" /></a>
+  <a href="https://github.com/MoizIbnYousaf/Ai-Agent-Skills#shelves"><img alt="Library structure" src="https://img.shields.io/badge/library-58%20skills%20%C2%B7%205%20shelves-cba6f7?style=for-the-badge&labelColor=313244&logo=bookstack&logoColor=cdd6f4" /></a>
 </p>
 
-<p align="center"><sub>8 house copies · 47 cataloged upstream</sub></p>
+<p align="center"><sub>11 house copies · 47 cataloged upstream</sub></p>
 <!-- GENERATED:library-stats:end -->
 
 <p align="center"><em>Picked, shelved, and maintained by hand.</em></p>
@@ -106,8 +106,6 @@ Do not hand-edit files if the command already exists.
 5. Start with `add`. Use `catalog` when you need an upstream entry. Use `vendor` only for a real house copy.
 6. Run `npx ai-agent-skills build-docs` at the end.
 7. Tell me what you added, which shelves you used, and what you'd add next.
-
-If you cannot run local commands here, tell me to use another Agent Skills-compatible agent with terminal access.
 ```
 
 ## Quick Start
@@ -213,8 +211,8 @@ The shelves are the main structure.
 | Frontend | 10 | Interfaces, design systems, browser work, and product polish. |
 | Backend | 5 | Systems, data, security, and runtime operations. |
 | Mobile | 24 | Swift, SwiftUI, iOS, and Apple-platform development, with room for future React Native branches. |
-| Workflow | 10 | Files, docs, planning, release work, and research-to-output flows. |
-| Agent Engineering | 6 | MCP, skill-building, prompting discipline, and LLM application work. |
+| Workflow | 11 | Files, docs, planning, release work, and research-to-output flows. |
+| Agent Engineering | 8 | MCP, skill-building, prompting discipline, and LLM application work. |
 <!-- GENERATED:shelf-table:end -->
 
 The full map lives in [WORK_AREAS.md](./WORK_AREAS.md).
@@ -283,11 +281,11 @@ Current upstream mix:
 | --- | --- |
 | `anthropics/skills` | 11 |
 | `openai/skills` | 9 |
+| `MoizIbnYousaf/Ai-Agent-Skills` | 5 |
 | `Dimillian/Skills` | 4 |
 | `wshobson/agents` | 4 |
 | `rgmez/apple-accessibility-skills` | 3 |
 | `ComposioHQ/awesome-claude-skills` | 2 |
-| `MoizIbnYousaf/Ai-Agent-Skills` | 2 |
 | `andrewgleave/skills` | 1 |
 | `arjitj2/swiftui-design-principles` | 1 |
 | `AvdLee/Core-Data-Agent-Skill` | 1 |
