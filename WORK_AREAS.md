@@ -60,14 +60,15 @@ House copies stay flat under `skills/<name>/`. The catalog holds the real struct
 
 ## Agent Engineering
 
-8 skills. MCP, skill-building, prompting discipline, and LLM application work.
+14 skills. MCP, skill-building, prompting discipline, and LLM application work.
 
 | Branch | Skills | Source |
 | --- | --- | --- |
 | Agent Behavior | `ask-questions-if-underspecified` | thsottiaux |
+| Agent Workflows | `browse-and-evaluate`, `update-installed-skills`, `review-a-skill` | MoizIbnYousaf |
 | LLM Apps | `llm-application-dev` | wshobson |
 | MCP | `mcp-builder` | anthropics |
 | Prompting | `best-practices` | MoizIbnYousaf |
 | Provider Docs | `openai-docs` | openai |
-| Shared Libraries | `install-from-remote-library`, `curate-a-team-library` | MoizIbnYousaf |
+| Shared Libraries | `install-from-remote-library`, `curate-a-team-library`, `build-workspace-docs`, `audit-library-health`, `migrate-skills-between-libraries` | MoizIbnYousaf |
 | Skill Authoring | `skill-creator` | anthropics |

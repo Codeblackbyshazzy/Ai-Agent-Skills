@@ -1,6 +1,7 @@
 ---
 name: ask-questions-if-underspecified
 description: Clarify requirements before implementing. Do not use automatically, only when invoked explicitly.
+version: 4.1.0
 ---
 
 # Ask Questions If Underspecified

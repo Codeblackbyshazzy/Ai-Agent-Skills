@@ -3854,6 +3854,203 @@ test('vendor copies nested reference files', () => {
   }
 });
 
+// ============ GAP F: WORKFLOW SKILL FILES WITH GUARDRAILS + VERSIONING ============
+
+test('9 workflow skill files ship with the package', () => {
+  const expected = [
+    'install-from-remote-library',
+    'curate-a-team-library',
+    'share-a-library',
+    'browse-and-evaluate',
+    'update-installed-skills',
+    'build-workspace-docs',
+    'review-a-skill',
+    'audit-library-health',
+    'migrate-skills-between-libraries',
+  ];
+  for (const name of expected) {
+    const skillPath = path.join(__dirname, 'skills', name, 'SKILL.md');
+    assert(fs.existsSync(skillPath), `Expected workflow skill file: ${skillPath}`);
+  }
+});
+
+test('all vendored skill files have version frontmatter', () => {
+  const skillsDir = path.join(__dirname, 'skills');
+  const dirs = fs.readdirSync(skillsDir, { withFileTypes: true }).filter(d => d.isDirectory());
+  for (const dir of dirs) {
+    const skillMd = path.join(skillsDir, dir.name, 'SKILL.md');
+    if (!fs.existsSync(skillMd)) continue;
+    const content = fs.readFileSync(skillMd, 'utf8');
+    assertContains(content, 'version:', `${dir.name} should have version frontmatter`);
+  }
+});
+
+test('all workflow skills are cataloged in skills.json', () => {
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'skills.json'), 'utf8'));
+  const workflowSkills = [
+    'browse-and-evaluate', 'update-installed-skills', 'build-workspace-docs',
+    'review-a-skill', 'audit-library-health', 'migrate-skills-between-libraries',
+  ];
+  for (const name of workflowSkills) {
+    const found = data.skills.find(s => s.name === name);
+    assert(found, `Expected ${name} to be cataloged in skills.json`);
+    assertEqual(found.tier, 'house', `${name} should be a house skill`);
+    assert(found.path, `${name} should have a path`);
+  }
+});
+
+test('workflow skill files contain guardrail instructions', () => {
+  const skillNames = [
+    'browse-and-evaluate',
+    'update-installed-skills',
+    'build-workspace-docs',
+    'review-a-skill',
+    'audit-library-health',
+    'migrate-skills-between-libraries',
+  ];
+  for (const name of skillNames) {
+    const content = fs.readFileSync(path.join(__dirname, 'skills', name, 'SKILL.md'), 'utf8');
+    assert(
+      content.includes('--dry-run') || content.includes('dry-run'),
+      `${name} should mention --dry-run as a guardrail`
+    );
+    assert(
+      content.includes('Guardrail') || content.includes('Invariant') || content.includes('Gotcha'),
+      `${name} should have guardrails or gotchas section`
+    );
+  }
+});
+
+// ============ GAP E: DRY-RUN ON BUILD-DOCS + FULL RESPONSE SANITIZATION ============
+
+test('build-docs --dry-run previews doc generation without writing files', () => {
+  const fixture = createWorkspaceFixture();
+  try {
+    seedWorkspaceCatalog(fixture.workspaceDir);
+    const readmeBefore = fs.readFileSync(path.join(fixture.workspaceDir, 'README.md'), 'utf8');
+
+    const result = runCommandResult(['build-docs', '--dry-run', '--format', 'text'], {
+      cwd: fixture.workspaceDir,
+      rawFormat: true,
+    });
+    assertEqual(result.status, 0, `build-docs --dry-run should succeed: ${result.stdout}${result.stderr}`);
+    assertContains(result.stdout, 'Dry Run');
+
+    const readmeAfter = fs.readFileSync(path.join(fixture.workspaceDir, 'README.md'), 'utf8');
+    assertEqual(readmeBefore, readmeAfter, 'build-docs dry-run should not change README.md');
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('build-docs --dry-run --format json emits structured dry-run result', () => {
+  const fixture = createWorkspaceFixture();
+  try {
+    seedWorkspaceCatalog(fixture.workspaceDir);
+    const result = runCommandResult(['build-docs', '--dry-run', '--format', 'json'], {
+      cwd: fixture.workspaceDir,
+      rawFormat: true,
+    });
+    assertEqual(result.status, 0, `build-docs --dry-run json should succeed: ${result.stdout}${result.stderr}`);
+    const parsed = JSON.parse(result.stdout);
+    assertEqual(parsed.data.dryRun, true);
+    assert(Array.isArray(parsed.data.actions), 'Expected actions array in dry-run output');
+    assert(parsed.data.actions.length > 0, 'Expected at least one action in dry-run output');
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('build-docs --format json accepts dryRun flag in schema introspection', () => {
+  const output = runArgs(['help', 'build-docs', '--format', 'json']);
+  const parsed = JSON.parse(output);
+  const commands = parsed.data.commands || [];
+  const buildDocsCmd = commands.find((c) => c.name === 'build-docs');
+  assert(buildDocsCmd, 'Expected build-docs command in schema');
+  assert(
+    buildDocsCmd.flags.some((flag) => flag.name === 'dryRun' || flag.name === 'dry-run'),
+    'Expected dryRun flag in build-docs schema'
+  );
+});
+
+test('search results sanitize descriptions containing suspicious content (NDJSON)', () => {
+  const output = runArgs(['search', 'best-practices', '--format', 'json']);
+  const lines = parseJsonLines(output);
+  const items = lines.filter((line) => line.data && line.data.kind === 'item');
+  assert(items.length > 0, 'Expected at least one search result');
+  for (const item of items) {
+    const desc = (item.data.skill && item.data.skill.description) || '';
+    assertNotContains(desc, '<system>', 'Descriptions should not contain <system> tags');
+    assertNotContains(desc, 'ignore previous', 'Descriptions should not contain injection patterns');
+  }
+});
+
+test('info --format json sanitizes all text fields', () => {
+  const output = runArgs(['info', 'best-practices', '--format', 'json']);
+  const parsed = JSON.parse(output);
+  const desc = parsed.data.description || '';
+  const whyHere = (parsed.data.skill && parsed.data.skill.whyHere) || parsed.data.whyHere || '';
+  assertNotContains(desc, '<system>');
+  assertNotContains(whyHere, '<system>');
+});
+
+// ============ GAP D: OUTPUT PATH SANDBOXING + SECURITY POSTURE ============
+
+test('security posture comment exists in cli.js', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'cli.js'), 'utf8');
+  assertContains(src, 'The agent is not a trusted operator');
+});
+
+test('sandboxOutputPath rejects paths that escape the allowed root', () => {
+  const result = runCommandResult(['init', '../../../tmp/escape-test'], { rawFormat: true });
+  const combined = `${result.stdout}${result.stderr}`;
+  assert(
+    result.status !== 0 || combined.includes('escapes the allowed root'),
+    'init with traversal path should be rejected by sandbox'
+  );
+});
+
+test('init-library sandboxes output to CWD', () => {
+  const tmpParent = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-init-lib-'));
+  try {
+    const result = runCommandResult(['init-library', 'Safe Library'], {
+      cwd: tmpParent,
+      rawFormat: true,
+    });
+    assertEqual(result.status, 0, `init-library should succeed: ${result.stdout}${result.stderr}`);
+    assert(fs.existsSync(path.join(tmpParent, 'safe-library', 'skills.json')), 'workspace should be created inside CWD');
+  } finally {
+    fs.rmSync(tmpParent, { recursive: true, force: true });
+  }
+});
+
+test('init --dry-run previews skill creation without writing files', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'init-dryrun-'));
+  try {
+    const result = runCommandResult(['init', 'test-skill', '--dry-run', '--format', 'json'], {
+      cwd: tmpDir,
+      rawFormat: true,
+    });
+    assertEqual(result.status, 0, `init --dry-run should succeed: ${result.stdout}${result.stderr}`);
+    const parsed = JSON.parse(result.stdout);
+    assertEqual(parsed.data.dryRun, true);
+    assert(Array.isArray(parsed.data.actions), 'Expected actions array');
+    assert(!fs.existsSync(path.join(tmpDir, 'test-skill', 'SKILL.md')), 'init --dry-run should not create SKILL.md');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('HTTP-layer percent-encoded traversal in skill name is rejected', () => {
+  const result = runCommandResult(['install', '%2e%2e/%2e%2e/etc/passwd', '--dry-run'], { rawFormat: true });
+  const combined = `${result.stdout}${result.stderr}`;
+  assert(result.status !== 0, 'percent-encoded traversal skill name should be rejected');
+  assert(
+    combined.includes('percent-encoded') || combined.includes('Invalid skill name'),
+    'Should mention percent-encoding or invalid name'
+  );
+});
+
 // ============ SUMMARY ============
 
 console.log('\n' + '─'.repeat(40));

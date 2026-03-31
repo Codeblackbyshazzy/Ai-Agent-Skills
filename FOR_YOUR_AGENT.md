@@ -9,6 +9,12 @@ The companion workflow skills are:
 - `npx ai-agent-skills install install-from-remote-library`
 - `npx ai-agent-skills install curate-a-team-library`
 - `npx ai-agent-skills install share-a-library`
+- `npx ai-agent-skills install browse-and-evaluate`
+- `npx ai-agent-skills install update-installed-skills`
+- `npx ai-agent-skills install build-workspace-docs`
+- `npx ai-agent-skills install review-a-skill`
+- `npx ai-agent-skills install audit-library-health`
+- `npx ai-agent-skills install migrate-skills-between-libraries`
 
 ## Paste this into your agent
 

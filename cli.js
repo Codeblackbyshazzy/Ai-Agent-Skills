@@ -44,7 +44,7 @@ const {
 } = require('./lib/catalog-data.cjs');
 const { buildDependencyGraph, resolveInstallOrder } = require('./lib/dependency-graph.cjs');
 const { buildInstallStateIndex, formatInstallStateLabel, getInstallState, getInstalledSkillNames, listInstalledSkillNamesInDir } = require('./lib/install-state.cjs');
-const { writeGeneratedDocs } = require('./lib/render-docs.cjs');
+const { generatedDocsAreInSync, writeGeneratedDocs } = require('./lib/render-docs.cjs');
 const { parseSkillMarkdown: parseSkillMarkdownFile } = require('./lib/frontmatter.cjs');
 const { readInstalledMeta, writeInstalledMeta } = require('./lib/install-metadata.cjs');
 const {
@@ -62,6 +62,11 @@ const {
   sanitizeSubpath: sanitizeSubpathLib,
   validateGitUrl: validateGitUrlLib,
 } = require('./lib/source.cjs');
+
+// Security posture: The agent is not a trusted operator.
+// All inputs are validated, outputs are sandboxed to the working directory or
+// install target, and skill content is sanitized before display. Never trust
+// agent-supplied paths, identifiers, or payloads without validation.
 
 // Version check
 const [NODE_MAJOR, NODE_MINOR] = process.versions.node.split('.').map(Number);
@@ -267,7 +272,7 @@ const COMMAND_REGISTRY = {
     aliases: [],
     summary: 'Create a new SKILL.md template.',
     args: [{ name: 'name', required: false, type: 'string' }],
-    flags: ['format'],
+    flags: ['dryRun', 'format'],
   },
   'init-library': {
     aliases: [],
@@ -279,7 +284,7 @@ const COMMAND_REGISTRY = {
     aliases: [],
     summary: 'Regenerate README.md and WORK_AREAS.md in a workspace.',
     args: [],
-    flags: ['format'],
+    flags: ['dryRun', 'format'],
   },
   config: {
     aliases: [],
@@ -1549,6 +1554,15 @@ function validateAgentPayloadValue(value, fieldName = 'payload', parentKey = '')
   }
 }
 
+function sandboxOutputPath(target, allowedRoot) {
+  const resolved = path.resolve(target);
+  const root = path.resolve(allowedRoot);
+  if (!resolved.startsWith(root + path.sep) && resolved !== root) {
+    throw new Error(`Output path "${target}" escapes the allowed root "${allowedRoot}".`);
+  }
+  return resolved;
+}
+
 function sanitizeSkillContent(content) {
   const source = String(content == null ? '' : content);
   const lines = source.split(/\r?\n/);
@@ -2623,6 +2637,7 @@ function installSkill(skillName, agent = 'claude', dryRun = false, targetPath = 
 
   const destDir = targetPath || AGENT_PATHS[agent] || SCOPES.global;
   const destPath = path.join(destDir, skillName);
+  sandboxOutputPath(destPath, destDir);
   const skillSize = getDirectorySize(sourcePath);
 
   if (dryRun) {
@@ -2701,6 +2716,7 @@ function installSkillToScope(skillName, scopePath, scopeLabel, dryRun = false, o
   }
 
   const destPath = path.join(scopePath, skillName);
+  sandboxOutputPath(destPath, scopePath);
   const skillSize = getDirectorySize(sourcePath);
 
   if (dryRun) {
@@ -5167,9 +5183,10 @@ function classifyGitError(message) {
 }
 
 // v3: copy skill files with appropriate skip list
-function copySkillFiles(srcDir, destDir) {
+function copySkillFiles(srcDir, destDir, sandboxRoot) {
   const skipList = ['.git', 'node_modules', '__pycache__', '__pypackages__', 'metadata.json'];
 
+  if (sandboxRoot) sandboxOutputPath(destDir, sandboxRoot);
   if (fs.existsSync(destDir)) {
     fs.rmSync(destDir, { recursive: true });
   }
@@ -5941,9 +5958,10 @@ function setConfig(key, value) {
 
 // ============ INIT COMMAND ============
 
-function initSkill(name) {
+function initSkill(name, options = {}) {
   const skillName = name || path.basename(process.cwd());
   const targetDir = name ? path.join(process.cwd(), name) : process.cwd();
+  sandboxOutputPath(targetDir, process.cwd());
   const skillMdPath = path.join(targetDir, 'SKILL.md');
 
   if (fs.existsSync(skillMdPath)) {
@@ -5953,6 +5971,22 @@ function initSkill(name) {
   }
 
   const safeName = skillName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+
+  if (options.dryRun) {
+    emitDryRunResult('init', [
+      {
+        type: 'create-skill',
+        target: `Create ${safeName}/SKILL.md`,
+        detail: skillMdPath,
+      },
+    ], {
+      command: 'init',
+      name: safeName,
+      targetDir,
+      skillMdPath,
+    });
+    return true;
+  }
 
   const template = `---
 name: ${safeName}
@@ -6166,6 +6200,7 @@ function initLibrary(name, options = {}) {
   }
 
   const targetDir = path.resolve(process.cwd(), librarySlug);
+  sandboxOutputPath(targetDir, process.cwd());
   if (isManagedWorkspaceRoot(targetDir)) {
     error(`Workspace already initialized at ${targetDir}`);
     process.exitCode = 1;
@@ -6257,12 +6292,35 @@ function initLibrary(name, options = {}) {
   return true;
 }
 
-function buildDocs() {
+function buildDocs(options = {}) {
   const context = requireWorkspaceContext('build-docs');
   if (!context) return false;
 
   try {
     const data = loadCatalogData(context);
+
+    if (options.dryRun) {
+      const inSync = generatedDocsAreInSync(data, context);
+      emitDryRunResult('build-docs', [
+        {
+          type: 'write-readme',
+          target: `Write ${path.basename(context.readmePath)}`,
+          detail: context.readmePath,
+        },
+        {
+          type: 'write-work-areas',
+          target: `Write ${path.basename(context.workAreasPath)}`,
+          detail: context.workAreasPath,
+        },
+      ], {
+        command: 'build-docs',
+        readmePath: context.readmePath,
+        workAreasPath: context.workAreasPath,
+        currentlyInSync: inSync,
+      });
+      return true;
+    }
+
     writeGeneratedDocs(data, context);
     if (isJsonOutput()) {
       setJsonResultData({
@@ -6831,7 +6889,7 @@ async function main() {
       return;
 
     case 'init':
-      initSkill(param);
+      initSkill(param, { dryRun });
       return;
 
     case 'init-library':
@@ -6843,7 +6901,7 @@ async function main() {
       return;
 
     case 'build-docs':
-      buildDocs();
+      buildDocs({ dryRun });
       return;
 
     case 'check':

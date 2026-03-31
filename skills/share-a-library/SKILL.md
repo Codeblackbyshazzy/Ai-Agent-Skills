@@ -2,6 +2,7 @@
 name: share-a-library
 description: Use when a managed library is ready to publish to GitHub and hand to teammates as an install command. Run the GitHub publishing steps, then return the exact shareable install command.
 category: workflow
+version: 4.1.0
 ---
 
 # Share A Library

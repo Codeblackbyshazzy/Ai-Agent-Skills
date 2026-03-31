@@ -2,6 +2,7 @@
 name: curate-a-team-library
 description: Use when building a managed team skills library for a real stack. Map work to shelves, browse before curating, write meaningful `whyHere` notes, and create a starter pack once the first pass is solid.
 category: workflow
+version: 4.1.0
 ---
 
 # Curate A Team Library
