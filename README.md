@@ -13,10 +13,10 @@
   <a href="https://github.com/MoizIbnYousaf/Ai-Agent-Skills"><img alt="GitHub stars" src="https://img.shields.io/github/stars/MoizIbnYousaf/Ai-Agent-Skills?style=for-the-badge&label=stars&labelColor=313244&color=89b4fa&logo=github&logoColor=cdd6f4" /></a>
   <a href="https://www.npmjs.com/package/ai-agent-skills"><img alt="npm version" src="https://img.shields.io/npm/v/ai-agent-skills?style=for-the-badge&label=version&labelColor=313244&color=b4befe&logo=npm&logoColor=cdd6f4" /></a>
   <a href="https://www.npmjs.com/package/ai-agent-skills"><img alt="npm total downloads" src="https://img.shields.io/npm/dt/ai-agent-skills?style=for-the-badge&label=downloads&labelColor=313244&color=f5e0dc&logo=npm&logoColor=cdd6f4" /></a>
-  <a href="https://github.com/MoizIbnYousaf/Ai-Agent-Skills#shelves"><img alt="Library structure" src="https://img.shields.io/badge/library-110%20skills%20%C2%B7%206%20shelves-cba6f7?style=for-the-badge&labelColor=313244&logo=bookstack&logoColor=cdd6f4" /></a>
+  <a href="https://github.com/MoizIbnYousaf/Ai-Agent-Skills#shelves"><img alt="Library structure" src="https://img.shields.io/badge/library-115%20skills%20%C2%B7%206%20shelves-cba6f7?style=for-the-badge&labelColor=313244&logo=bookstack&logoColor=cdd6f4" /></a>
 </p>
 
-<p align="center"><sub>17 house copies · 93 cataloged upstream</sub></p>
+<p align="center"><sub>17 house copies · 98 cataloged upstream</sub></p>
 <!-- GENERATED:library-stats:end -->
 
 <p align="center"><em>Picked, shelved, and maintained by hand.</em></p>
@@ -44,13 +44,12 @@ The bundled library is organized the way I work:
 Use `skills.sh` for the broad ecosystem.
 Use `ai-agent-skills` when you want a smaller library with shelves, provenance, and notes.
 
-## What's New in 4.2.0
+## What's New in 4.3.1
 
-- Managed team libraries you can share over GitHub and install with `install <owner>/<repo>`
-- Machine-readable CLI flows with `--format json`, `--fields`, pagination, and safer non-interactive output
-- More authored workflow skills for curating, reviewing, syncing, and sharing libraries
-- Dependency-aware installs, `sync` as the main refresh verb, and stronger installed-state visibility across the CLI and TUI
-- A cleaner curator loop around shelves, provenance, trust, and shared starter packs
+- Marketing pack synced to `marketing-cli@0.5.4` — 51 skills total, with `mktg-setup`, `postiz`, `mktg-x`, `firecrawl`, and `summarize` newly added to the `mktg` collection
+- Renamed the upstream marketing pack source from `MoizIbnYousaf/mktg` to `MoizIbnYousaf/marketing-cli` across catalog metadata, install sources, and source URLs
+- Bundled library now ships 115 cataloged skills (17 house copies, 98 cataloged upstream)
+- Same private-library bootstrap, bulk import, and managed-workspace flow shipped in `4.3.0`
 
 ## What It Is Now
 
@@ -239,7 +238,7 @@ The shelves are the main structure.
 | Mobile | 24 | Swift, SwiftUI, iOS, and Apple-platform development, with room for future React Native branches. |
 | Workflow | 11 | Files, docs, planning, release work, and research-to-output flows. |
 | Agent Engineering | 14 | MCP, skill-building, prompting discipline, and LLM application work. |
-| Marketing | 46 | Brand, strategy, copy, distribution, creative, SEO, conversion, and growth work. |
+| Marketing | 51 | Brand, strategy, copy, distribution, creative, SEO, conversion, and growth work. |
 <!-- GENERATED:shelf-table:end -->
 
 The full map lives in [WORK_AREAS.md](./WORK_AREAS.md).
@@ -257,7 +256,7 @@ Collections are smaller sets. Useful, but secondary to the shelves.
 | `build-systems` | Backend, architecture, MCP, and security work. | `mcp-builder`, `backend-development`, `database-design` |
 | `test-and-debug` | QA, debugging, CI cleanup, and observability. | `playwright`, `webapp-testing`, `gh-fix-ci` |
 | `docs-and-research` | Docs, files, research, and writing work. | `pdf`, `doc-coauthoring`, `docx` |
-| `mktg` | The full upstream mktg marketing playbook. Install the whole set at once or pick from it. | `cmo`, `brand-voice`, `positioning-angles` |
+| `mktg` | The full upstream marketing-cli playbook. Install the whole set at once or pick from it. | `cmo`, `brand-voice`, `positioning-angles` |
 <!-- GENERATED:collection-table:end -->
 
 ## Curating the catalog
@@ -307,7 +306,7 @@ Current upstream mix:
 <!-- GENERATED:source-table:start -->
 | Source repo | Skills |
 | --- | --- |
-| `MoizIbnYousaf/mktg` | 46 |
+| `MoizIbnYousaf/marketing-cli` | 51 |
 | `anthropics/skills` | 11 |
 | `MoizIbnYousaf/Ai-Agent-Skills` | 11 |
 | `openai/skills` | 9 |

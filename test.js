@@ -427,7 +427,7 @@ test('catalog exposes curated collections with resolved skills', () => {
   assert(myPicks.skills.length > 0, 'collection should resolve skill objects');
   assertContains(myPicks.skills.map(skill => skill.name).join(' '), 'frontend-design');
   assert(mktg, 'expected mktg collection to exist');
-  assertEqual(mktg.skills.length, 46, 'expected 46 mktg skills in the collection');
+  assertEqual(mktg.skills.length, 51, 'expected 51 mktg skills in the collection');
 });
 
 test('catalog collections expose install commands for curated packs', () => {
@@ -443,9 +443,9 @@ test('catalog collections expose install commands for curated packs', () => {
 
 test('mktg manifest-backed skills are cataloged on the marketing shelf', () => {
   const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'skills.json'), 'utf8'));
-  const mktgSkills = data.skills.filter((skill) => skill.source === 'MoizIbnYousaf/mktg');
+  const mktgSkills = data.skills.filter((skill) => skill.source === 'MoizIbnYousaf/marketing-cli');
 
-  assertEqual(mktgSkills.length, 46, 'expected 46 mktg skills');
+  assertEqual(mktgSkills.length, 51, 'expected 51 mktg skills');
   ['cmo', 'brand-voice', 'creative', 'seo-audit', 'page-cro', 'typefully'].forEach((name) => {
     assert(mktgSkills.some((skill) => skill.name === name), `expected ${name} in mktg catalog entries`);
   });
@@ -454,9 +454,9 @@ test('mktg manifest-backed skills are cataloged on the marketing shelf', () => {
   });
   mktgSkills.forEach((skill) => {
     assertEqual(skill.workArea, 'marketing');
-    assertEqual(skill.source, 'MoizIbnYousaf/mktg');
-    assertContains(skill.installSource, `MoizIbnYousaf/mktg/skills/${skill.name}`);
-    assertContains(skill.sourceUrl, `https://github.com/MoizIbnYousaf/mktg/tree/main/skills/${skill.name}`);
+    assertEqual(skill.source, 'MoizIbnYousaf/marketing-cli');
+    assertContains(skill.installSource, `MoizIbnYousaf/marketing-cli/skills/${skill.name}`);
+    assertContains(skill.sourceUrl, `https://github.com/MoizIbnYousaf/marketing-cli/tree/main/skills/${skill.name}`);
   });
 });
 
@@ -2330,10 +2330,11 @@ test('browse command shows tty guidance outside a TTY', () => {
 
 test('README keeps the launch timeline and universal installer context', () => {
   const readme = fs.readFileSync(path.join(__dirname, 'README.md'), 'utf8');
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
   assertContains(readme, 'December 17, 2025');
   assertContains(readme, 'before `skills.sh` existed');
   assertContains(readme, 'Originally this repo was that installer.');
-  assertContains(readme, '## What\'s New in 4.2.0');
+  assertContains(readme, `## What's New in ${pkg.version}`);
   assertContains(readme, 'init-library my-library');
   assertContains(readme, 'Paste this into your agent');
 });
@@ -2411,7 +2412,7 @@ test('mktg shortcut honors explicit project scope', () => {
 test('mktg shortcut supports list mode', () => {
   const output = run('mktg --list');
   assertContains(output, 'mktg Marketing Pack');
-  assertContains(output, '46 picks');
+  assertContains(output, '51 picks');
   assertContains(output, 'brand-voice');
 });
 
@@ -3230,13 +3231,23 @@ test('init on existing skill shows error', () => {
 // ============ V3 CHECK COMMAND TESTS ============
 
 test('check command reports installed skills', () => {
-  const output = run('check');
-  assertContains(output, 'Checking installed skills');
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'check-home-'));
+  try {
+    const output = runArgsWithOptions(['check'], { env: { ...process.env, HOME: tempHome } });
+    assertContains(output, 'Checking installed skills');
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
 });
 
 test('check -g only checks global scope', () => {
-  const output = run('check -g');
-  assertContains(output, 'Checking installed skills');
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'check-home-'));
+  try {
+    const output = runArgsWithOptions(['check', '-g'], { env: { ...process.env, HOME: tempHome } });
+    assertContains(output, 'Checking installed skills');
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
 });
 
 // ============ V3 HELP AND UX TESTS ============
@@ -3259,7 +3270,7 @@ test('help mentions legacy agent support', () => {
 test('start-a-library workflow doc supports the agent-first flow', () => {
   const workflow = fs.readFileSync(path.join(__dirname, 'docs', 'workflows', 'start-a-library.md'), 'utf8');
   assertContains(workflow, 'Paste this into your agent');
-  assertContains(workflow, 'Use `init-library`, `add`, `install`, `sync`, and `build-docs`.');
+  assertContains(workflow, 'Use `init-library`, `import`, `add`, `install`, `sync`, and `build-docs`.');
   assertContains(workflow, '../../FOR_YOUR_AGENT.md');
   assertContains(workflow, 'https://github.com/MoizIbnYousaf/Ai-Agent-Skills');
   assertContains(workflow, 'Do not ask me to open the repo or link you to anything else.');
@@ -3296,9 +3307,10 @@ test('help --json emits CLI schema from the runtime command registry', () => {
   assertEqual(add.inputSchema.stdin.properties.workArea.type, 'string');
   assert(parsed.data.commands.some((command) => command.name === 'import'), 'Expected import command in help schema');
   const importCommand = parsed.data.commands.find((command) => command.name === 'import');
-  assert(importCommand.outputSchema.properties.skippedInvalidNames, 'Expected import output schema to expose skippedInvalidNames');
-  assert(importCommand.outputSchema.properties.skippedDuplicates, 'Expected import output schema to expose skippedDuplicates');
-  assert(importCommand.outputSchema.properties.distribution, 'Expected import output schema to expose distribution');
+  const importDataSchema = importCommand.outputSchema.schema.properties.data;
+  assert(importDataSchema.properties.skippedInvalidNames, 'Expected import output schema to expose skippedInvalidNames');
+  assert(importDataSchema.properties.skippedDuplicates, 'Expected import output schema to expose skippedDuplicates');
+  assert(importDataSchema.properties.distribution, 'Expected import output schema to expose distribution');
 });
 
 test('help <command> --json emits per-command schema', () => {

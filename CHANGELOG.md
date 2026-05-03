@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [4.3.1] - 2026-05-03
+
+### Added
+- Synced the upstream marketing-cli pack to `marketing-cli@0.5.4`. The `mktg` collection now ships 51 skills, with `mktg-setup` (first-run setup wizard), `postiz` (30+ social provider scheduling), `mktg-x` (authenticated X reader), `firecrawl` (web scraping and search), and `summarize` (text TL;DR) added to the catalog.
+
+### Changed
+- Renamed the upstream marketing pack source from `MoizIbnYousaf/mktg` to `MoizIbnYousaf/marketing-cli` across catalog metadata, install sources, and source URLs.
+- Refreshed README and `WORK_AREAS.md` so the bundled library stats (115 skills, 17 house copies, 98 cataloged upstream) reflect the synced catalog.
+
+## [4.3.0] - 2026-04-13
+
+### Added
+- Private-library bootstrap and import flows built into the normal workspace system, including current-directory `init-library`, custom shelves, and bulk import.
+- Better import reporting with invalid-name skips, duplicate reporting, fallback-to-`workflow` visibility, and stronger JSON summaries.
+- A new `marketing` shelf in the bundled library plus the upstream `mktg` marketing pack from `MoizIbnYousaf/marketing-cli`, with `mktg` and `marketing-cli` shortcut installs.
+
+### Changed
+- Improved private-library import quality with stronger auto-classification, better default `whyHere` notes, and steadier branch grouping for imported skills.
+- Updated README, workflow docs, and release notes so the published surface matches the 4.3.0 package state.
+
+### Fixed
+- Stopped invalid private-only skill names from aborting whole import batches.
+- Kept local/private imported skills readable across preview, info, install, and TUI flows without synthesizing bogus upstream URLs.
+
 ## [4.2.0] - 2026-03-31
 
 ### Added

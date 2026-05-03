@@ -513,7 +513,7 @@ function runCatalogListFlow(sourceRepo, expectedSkills) {
 }
 
 function runInstallLifecycle(skill, sourceSnapshot, scope) {
-  const isPrivateMktg = skill.source === 'MoizIbnYousaf/mktg';
+  const isPrivateMktg = skill.source === 'MoizIbnYousaf/marketing-cli';
   const context = createIsolatedContext({ useRealHomeForAuth: isPrivateMktg });
 
   try {
@@ -847,7 +847,7 @@ async function main() {
         const preview = runPreviewFlow(skill);
         report.previews.push(preview);
 
-        const scopes = skill.source === 'MoizIbnYousaf/mktg'
+        const scopes = skill.source === 'MoizIbnYousaf/marketing-cli'
           ? ['project']
           : (options.fullScopes ? ['global', 'project'] : ['project']);
         const lifecycles = [];
